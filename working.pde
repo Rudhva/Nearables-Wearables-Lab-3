@@ -23,12 +23,12 @@ int maxHistory = 5;
 // Key bindings
 char KEY_INC_SIZE = 'z';
 char KEY_DEC_SIZE = 'x';
-char KEY_ROT_CW   = 'b';
-char KEY_ROT_CCW  = 'B';
+char KEY_ROT_CW   = 'e';
+char KEY_ROT_CCW  = 'q';
 char KEY_UNDO     = 'c';
 char KEY_REDO     = 'C';
 char KEY_BLANK    = 'd'; // placeholder
-char KEY_SHOW_MENU= 'D';
+char KEY_SHOW_MENU= 's';
 
 // Menu state (menu geometry lives in SaveMenu.pde)
 boolean showMenu = false;
@@ -37,7 +37,7 @@ boolean typingFilename = false;
 
 Gif bgGif = null;
 String bgGifName = "HW_BG.gif";
-boolean bgCover = true;
+boolean bgCover = false;
 
 // -------------------------
 // Optional: post-process PNGs (white -> transparent)
@@ -126,8 +126,11 @@ for (String p : bgPaths) {
 // Draw
 // -------------------------
 void draw() {
+  background(0);              
   if (bgGif != null) drawBackgroundGif();
   else background(200);
+
+
 
   // Draw all objects
   for (int i = 0; i < objects.size(); i++) {
@@ -148,10 +151,19 @@ void draw() {
   }
 drawThumbnailBanner();
   // Instructions
-  fill(0);
-  textAlign(LEFT, BASELINE);
-  text("Click = add | </> select object | b/B = rotate CW/CCW | a/A = scale up/down | Arrow keys = select image | < > = select sprite | c = undo | C = redo | D = Save Menu",
-     10, height - bannerHeight - 10);
+  fill(255);
+  textSize(12);
+  textAlign(LEFT, CENTER);
+  
+  float helpY = height - bannerHeight/2;   // vertical center of the banner
+  
+  text("START → A/D = select image | Click = place | Arrows = move | q/e = rotate",
+       10, helpY - 10);   // line 1
+  
+  text("z/x = scale | q/e = rotate | c/C = undo/redo | s = Save Menu",
+       10, helpY + 10);   // line 
+
+
 
   if (imgFilenames.size() > 0) {
     text("Placing: " + (currentImgIndex + 1) + " (" + imgFilenames.get(currentImgIndex) + ") | Editing: " + (selectedObjIndex >= 0 ? objects.get(selectedObjIndex).name : "none"), 10, 20);
@@ -300,7 +312,7 @@ void keyPressed() {
     pushUndo();
   }
 
-  // Rotate (b/B)
+  // Rotate (q/e)
   if (key == KEY_ROT_CW)  { obj.angle += radians(5); return; }
   if (key == KEY_ROT_CCW) { obj.angle -= radians(5); return; }
 
@@ -402,9 +414,10 @@ void drawThumbnailBanner() {
 
   // --- draw translucent bar at the bottom ---
   float y0 = height - bannerHeight;
-  fill(0, 120); // semi-transparent black
   noStroke();
+  fill(0);                          
   rect(0, y0, width, bannerHeight);
+
 
   // --- thumbnails centered horizontally, aligned to the bar vertically ---
   int half = thumbCount / 2;
@@ -467,10 +480,10 @@ void drawStartOverlay() {
   textSize(20);
   text("START", x + startBtnW/2.0, y + startBtnH/2.0);
 
-  // hint text (optional)
+
   textSize(12);
   fill(230);
-  text("START → A/D = select image | Click = place | b/B = rotate | z/x = scale | </> = select object | c/C = undo/redo | D = Save Menu",
+  text("BME/CS 479 LAB3",
      10, height - bannerHeight - 10);
 }
 
