@@ -2,16 +2,133 @@ import java.io.File;
 import java.util.*;
 import gifAnimation.*;
 
+// --- MODES ---
+final int MODE_PICK_BG  = 0;
+final int MODE_PICK_CAT = 1;
+final int MODE_PICK_IMG = 2;
+final int MODE_MOVE_OBJ = 3;
+int mode = MODE_PICK_BG;
+
+// --- CATALOGS ---
+String[] CATALOGS = { "frame", "item", "my_love", "words", "other" };
+int currentBgIndex = 0;
+int currentCatIndex = 0;    // index in CATALOGS
+int currentImgIndex = 0;    // index inside current catalog
+int bgDrawX = 0, bgDrawY = 0, bgDrawW = 0, bgDrawH = 0;
+
+
+// --- Background choices (thumbnails) ---
+ArrayList<String> bgFilenames = new ArrayList<String>();      // e.g., "library/background/foo.gif"
+HashMap<String, PImage> bgThumbs = new HashMap<String, PImage>();
+
+// --- Catalog -> list of files (thumbnails) ---
+HashMap<String, ArrayList<String>> catFiles = new HashMap<String, ArrayList<String>>(); // key=cat, val=list of "library/cat/file.png"
+
+// --- Also support still background images (PNG/JPG) ---
+PImage bgStill = null;
+
 boolean hasStarted = false;
 float startBtnW = 220;
 float startBtnH = 70;
+
+int marginTop = 40;
+int marginRight = 40;
+int marginBottom = 40;   
+int marginLeft = 40;
+
+boolean isImageFile(String low) {
+  return low.endsWith(".png") || low.endsWith(".jpg") || low.endsWith(".jpeg") || low.endsWith(".gif");
+}
+
+void scanBackgrounds() {
+  bgFilenames.clear();
+  File dir = new File(dataPath("library/background"));
+  if (!dir.exists()) return;
+  File[] files = dir.listFiles();
+  if (files == null) return;
+  for (File f : files) {
+    if (!f.isFile()) continue;
+    String name = f.getName();
+    String low = name.toLowerCase();
+    if (isImageFile(low)) {
+      String rel = "library/background/" + name;
+      bgFilenames.add(rel);
+      // cache a small thumbnail
+      PImage th = loadImage(rel);
+      if (th != null) {
+        int MAX_THUMB = 200;
+        if (th.width > MAX_THUMB || th.height > MAX_THUMB) th.resize(MAX_THUMB, 0);
+        bgThumbs.put(rel, th);
+      }
+    }
+  }
+}
+
+void scanCatalogs() {
+  catFiles.clear();
+  for (String cat : CATALOGS) {
+    ArrayList<String> list = new ArrayList<String>();
+    File dir = new File(dataPath("library/" + cat));
+    if (!dir.exists()) { catFiles.put(cat, list); continue; }
+    File[] files = dir.listFiles();
+    if (files == null) { catFiles.put(cat, list); continue; }
+    for (File f : files) {
+      if (!f.isFile()) continue;
+      String name = f.getName();
+      String low = name.toLowerCase();
+      if (isImageFile(low)) {
+        String rel = "library/" + cat + "/" + name;
+        list.add(rel);
+        // preview cache
+        if (!imgLibrary.containsKey(rel)) {
+          PImage im = loadImage(rel);
+          if (im != null) {
+            int MAX_THUMB = 200;
+            if (im.width > MAX_THUMB || im.height > MAX_THUMB) im.resize(MAX_THUMB, 0);
+            imgLibrary.put(rel, im);
+          }
+        }
+      }
+    }
+    catFiles.put(cat, list);
+  }
+}
+
+void setBackgroundFromPath(String rel) {
+  // clear old
+  bgGif = null;
+  bgStill = null;
+
+  try {
+    String low = rel.toLowerCase();
+    if (low.endsWith(".gif")) {
+      bgGif = new Gif(this, rel);
+      bgGif.loop();
+      println("BG set to GIF: " + rel);
+    } else {
+      bgStill = loadImage(rel);
+      println("BG set to image: " + rel);
+    }
+    // resize window to background + margins + banner
+    int bw = (bgGif != null) ? bgGif.width : (bgStill != null ? bgStill.width : width);
+    int bh = (bgGif != null) ? bgGif.height : (bgStill != null ? bgStill.height : height);
+    surface.setResizable(true);
+    surface.setSize(
+      bw + marginLeft + marginRight,
+      bh + marginTop + marginBottom + infoBarHeight + int(bannerHeight) 
+    );
+
+  } catch (Exception e) {
+    println("Failed to set background: " + rel);
+  }
+}
+
 
 
 ArrayList<DrawingObject> objects;
 ArrayList<String> imgFilenames = new ArrayList<String>();      // basenames only
 HashMap<String, PImage> imgLibrary = new HashMap<String, PImage>(); // basename -> PImage
 
-int currentImgIndex = 0;   // which image to place
 int selectedObjIndex = -1; // selected object (-1 = none)
 
 // Undo/Redo stacks
@@ -39,9 +156,6 @@ Gif bgGif = null;
 String bgGifName = "HW_BG.gif";
 boolean bgCover = false;
 
-// -------------------------
-// Optional: post-process PNGs (white -> transparent)
-// -------------------------
 void cleanImages() {
   String folderPath = sketchPath("data/library");
 
@@ -68,9 +182,8 @@ void cleanImages() {
 // -------------------------
 void setup() {
   size(800, 600);
-  cleanImages();               // optional
+  cleanImages();             
 
-  // Load images from data/library
   String libPath = dataPath("library");
   File folder = new File(libPath);
   if (!folder.exists()) folder.mkdirs();
@@ -78,9 +191,9 @@ void setup() {
 
   if (files != null && files.length > 0) {
     for (File f : files) {
-      if (!f.isFile()) continue;           // skip subfolders
+      if (!f.isFile()) continue;           
       String fname = f.getName();
-      if (fname.startsWith(".")) continue; // skip hidden
+      if (fname.startsWith(".")) continue; 
 
       String low = fname.toLowerCase();
       if (low.endsWith(".png") || low.endsWith(".gif") ||
@@ -99,24 +212,36 @@ void setup() {
   } else {
     println("No files found in data/library.");
   }
-  String[] bgPaths = { bgGifName, "library/" + bgGifName };
-for (String p : bgPaths) {
-  File f2 = new File(dataPath(p));
-  if (f2.exists()) {
-    try {
-      bgGif = new Gif(this, p);
-      bgGif.loop();
-      println("Background loaded from: " + p);
-      break;
-    } catch (Exception e) {
-      println("Failed to init background from: " + p);
-    }
-  }
-}
-  if (bgGif != null) {
-    surface.setResizable(true);
-    surface.setSize(bgGif.width, bgGif.height + int(bannerHeight)); // reserve space for banner
-  }
+  scanBackgrounds();   
+  scanCatalogs();      
+  
+  // Start the keyboard flow at "pick background"
+  mode = MODE_PICK_BG;
+  currentBgIndex  = 0;
+  currentCatIndex = 0;
+  currentImgIndex = 0;
+
+//  String[] bgPaths = { bgGifName, "library/" + bgGifName };
+//for (String p : bgPaths) {
+//  File f2 = new File(dataPath(p));
+//  if (f2.exists()) {
+//    try {
+//      bgGif = new Gif(this, p);
+//      bgGif.loop();
+//      println("Background loaded from: " + p);
+//      break;
+//    } catch (Exception e) {
+//      println("Failed to init background from: " + p);
+//    }
+//  }
+//}
+//  if (bgGif != null) {
+//    surface.setResizable(true);
+//    int newW = bgGif.width  + marginLeft + marginRight;
+//    int newH = bgGif.height + marginTop  + marginBottom + int(bannerHeight);
+//    surface.setSize(newW, newH);
+//  }
+
 
 
   objects = new ArrayList<DrawingObject>();
@@ -126,8 +251,8 @@ for (String p : bgPaths) {
 // Draw
 // -------------------------
 void draw() {
-  background(0);              
-  if (bgGif != null) drawBackgroundGif();
+  background(0);
+  if (bgGif != null || bgStill != null) drawBackgroundGif();  
   else background(200);
 
 
@@ -150,26 +275,26 @@ void draw() {
     }
   }
 drawThumbnailBanner();
-  // Instructions
-  fill(255);
-  textSize(12);
-  textAlign(LEFT, CENTER);
+  //// Instructions
+  //fill(255);
+  //textSize(12);
+  //textAlign(LEFT, CENTER);
   
-  float helpY = height - bannerHeight/2;   // vertical center of the banner
+  //float helpY = height - bannerHeight/2;   // vertical center of the banner
   
-  text("START → A/D = select image | Click = place | Arrows = move | q/e = rotate",
-       10, helpY - 10);   // line 1
+  //text("START → A/D = select image | Click = place | Arrows = move | q/e = rotate",
+  //     10, helpY - 10);   // line 1
   
-  text("z/x = scale | q/e = rotate | c/C = undo/redo | s = Save Menu",
-       10, helpY + 10);   // line 
+  //text("z/x = scale | q/e = rotate | c/C = undo/redo | s = Save Menu",
+  //     10, helpY + 10);   // line 
 
 
 
-  if (imgFilenames.size() > 0) {
-    text("Placing: " + (currentImgIndex + 1) + " (" + imgFilenames.get(currentImgIndex) + ") | Editing: " + (selectedObjIndex >= 0 ? objects.get(selectedObjIndex).name : "none"), 10, 20);
-  } else {
-    text("No images loaded! Put PNGs or GIFs in data/library/", 10, 20);
-  }
+  //if (imgFilenames.size() > 0) {
+  //  text("Placing: " + (currentImgIndex + 1) + " (" + imgFilenames.get(currentImgIndex) + ") | Editing: " + (selectedObjIndex >= 0 ? objects.get(selectedObjIndex).name : "none"), 10, 20);
+  //} else {
+  //  text("No images loaded! Put PNGs or GIFs in data/library/", 10, 20);
+  //}
 
   // Update menu position
   menuX = (width - menuW) / 2;
@@ -205,68 +330,67 @@ void pushUndo() {
 // Mouse Input
 // -------------------------
 void mousePressed() {
-  // Start button click handling first
   if (!hasStarted) {
     if (overStartButton()) {
       hasStarted = true;
     }
-    return;  // ignore any other clicks until started
+    return;  
   }
 
   if (showMenu) {
     handleMenuClick();
     return;
   }
-  if (imgFilenames.size() == 0) return;
+  //if (imgFilenames.size() == 0) return;
 
-  PImage img = imgLibrary.get(imgFilenames.get(currentImgIndex));
-  pushUndo();
+  //PImage img = imgLibrary.get(imgFilenames.get(currentImgIndex));
+  //pushUndo();
 
-  // Generate unique name
-  int count = 1;
-  String baseName = imgFilenames.get(currentImgIndex);
-  int dot = baseName.lastIndexOf('.');
-  if (dot >= 0) baseName = baseName.substring(0, dot);
-  String name = baseName + count;
+  //// Generate unique name
+  //int count = 1;
+  //String baseName = imgFilenames.get(currentImgIndex);
+  //int dot = baseName.lastIndexOf('.');
+  //if (dot >= 0) baseName = baseName.substring(0, dot);
+  //String name = baseName + count;
 
-  boolean exists = true;
-  while (exists) {
-    exists = false;
-    for (DrawingObject o : objects) {
-      if (o.name.equals(name)) {
-        exists = true;
-        count++;
-        name = baseName + count;
-        break;
-      }
-    }
+  //boolean exists = true;
+  //while (exists) {
+  //  exists = false;
+  //  for (DrawingObject o : objects) {
+  //    if (o.name.equals(name)) {
+  //      exists = true;
+  //      count++;
+  //      name = baseName + count;
+  //      break;
+  //    }
+  //  }
+  return;
   }
 
-  // Add object (PNG/JPG draws still; GIF animates automatically)
-  objects.add(new DrawingObject(this, img, mouseX, mouseY, 1.0, 0, imgFilenames.get(currentImgIndex), name));
-  selectedObjIndex = objects.size() - 1;
-}
+//  objects.add(new DrawingObject(this, img, mouseX, mouseY, 1.0, 0, imgFilenames.get(currentImgIndex), name));
+//  selectedObjIndex = objects.size() - 1;
+//}
 
 // -------------------------
 // Keyboard Input
 // -------------------------
 void keyPressed() {
-  // Block keys until user clicks START
+  // Block everything until START
   if (!hasStarted) return;
 
-  // Open menu
+  // Menu
   if (key == KEY_SHOW_MENU) {
-    showMenu = true;
-    typingFilename = false;
-    menuX = (width - menuW) / 2;
-    menuY = (height - menuH) / 2;
+    showMenu = true; typingFilename = false;
+    menuX = (width - menuW) / 2; menuY = (height - menuH) / 2;
   }
-
-  // Menu typing takes over when open
   handleMenuKey(key);
   if (showMenu) return;
 
-  // --- UNDO / REDO (c/C) ---
+  boolean navLeft  = (keyCode == LEFT );
+  boolean navRight = (keyCode == RIGHT );
+  boolean okKey    = (key == ENTER || key == RETURN);
+
+  // Undo/Redo still work in any mode
   if (key == KEY_UNDO) {
     if (undoStack.size() > 0) {
       ignoreNextPush = true;
@@ -290,41 +414,71 @@ void keyPressed() {
     return;
   }
 
-  // --- IMAGE PICKER: A/D (both cases), always allowed ---
-  if (imgFilenames.size() > 0) {
-    if (key == 'a' || key == 'A') { scrollThumbnailLeft();  return; }
-    if (key == 'd' || key == 'D') { scrollThumbnailRight(); return; }
+  switch (mode) {
+    case MODE_PICK_BG: {
+      if (bgFilenames.size() == 0) return;
+      if (navLeft)  { currentBgIndex = (currentBgIndex - 1 + bgFilenames.size()) % bgFilenames.size(); return; }
+      if (navRight) { currentBgIndex = (currentBgIndex + 1) % bgFilenames.size(); return; }
+      if (okKey) {
+        setBackgroundFromPath(bgFilenames.get(currentBgIndex));
+        mode = MODE_PICK_CAT;
+        return;
+      }
+      break;
+    }
+    case MODE_PICK_CAT: {
+      if (navLeft)  { currentCatIndex = (currentCatIndex - 1 + CATALOGS.length) % CATALOGS.length; return; }
+      if (navRight) { currentCatIndex = (currentCatIndex + 1) % CATALOGS.length; return; }
+      if (okKey)    { currentImgIndex = 0; mode = MODE_PICK_IMG; return; }
+      break;
+    }
+    case MODE_PICK_IMG: {
+      String cat = CATALOGS[currentCatIndex];
+      ArrayList<String> list = catFiles.get(cat);
+      if (list == null || list.size() == 0) return;
+
+      if (navLeft)  { currentImgIndex = (currentImgIndex - 1 + list.size()) % list.size(); return; }
+      if (navRight) { currentImgIndex = (currentImgIndex + 1) % list.size(); return; }
+      if (keyCode == UP) { mode = MODE_PICK_CAT; return; }
+      if (okKey) {
+        // Create object at center of top region (ignores mouse)
+        String rel = list.get(currentImgIndex);
+        PImage im = imgLibrary.get(rel);
+        if (im == null) im = loadImage(rel);
+
+        float cx = marginLeft + (width - marginLeft - marginRight) / 2.0;
+        float cy = marginTop  + (height - bannerHeight - marginTop - marginBottom) / 2.0;
+
+        pushUndo();
+        String name = makeUniqueName(rel);
+        objects.add(new DrawingObject(this, im, cx, cy, 1.0, 0, rel, name)); 
+        selectedObjIndex = objects.size() - 1;
+        mode = MODE_MOVE_OBJ;  // now arrows move the object
+        return;
+      }
+      break;
+    }
+    case MODE_MOVE_OBJ: {
+      if (selectedObjIndex < 0 || selectedObjIndex >= objects.size()) { mode = MODE_PICK_IMG; return; }
+      DrawingObject obj = objects.get(selectedObjIndex);
+
+      // movement only in this mode:
+      if (keyCode == LEFT)  { pushUndo(); obj.x -= 10; return; }
+      if (keyCode == RIGHT) { pushUndo(); obj.x += 10; return; }
+      if (keyCode == UP)    { pushUndo(); obj.y -= 10; return; }
+      if (keyCode == DOWN)  { pushUndo(); obj.y += 10; return; }
+
+      // rotate/scale still available
+      if (key == KEY_ROT_CW)  { pushUndo(); obj.angle += radians(5); return; }
+      if (key == KEY_ROT_CCW) { pushUndo(); obj.angle -= radians(5); return; }
+      if (key == KEY_INC_SIZE){ pushUndo(); obj.size += 0.05; return; }
+      if (key == KEY_DEC_SIZE){ pushUndo(); obj.size = max(0.05, obj.size - 0.05); return; }
+
+      // OK confirms location and returns to image picker
+      if (okKey) { mode = MODE_PICK_IMG; return; }
+      break;
+    }
   }
-
-  // If no objects yet, stop here (so A/D can be used before placing)
-  if (objects.size() == 0) return;
-
-  // Select a different placed object with < and >
-  if (key == '<') { selectedObjIndex = max(0, (selectedObjIndex < 0 ? 0 : selectedObjIndex - 1)); return; }
-  if (key == '>') { selectedObjIndex = min(objects.size() - 1, (selectedObjIndex < 0 ? 0 : selectedObjIndex + 1)); return; }
-
-  if (selectedObjIndex < 0) return;
-  DrawingObject obj = objects.get(selectedObjIndex);
-
-  // Push undo before modifications
-  if (key == KEY_INC_SIZE || key == KEY_DEC_SIZE || key == KEY_ROT_CW || key == KEY_ROT_CCW ||
-      keyCode == UP || keyCode == DOWN || keyCode == LEFT || keyCode == RIGHT) {
-    pushUndo();
-  }
-
-  // Rotate (q/e)
-  if (key == KEY_ROT_CW)  { obj.angle += radians(5); return; }
-  if (key == KEY_ROT_CCW) { obj.angle -= radians(5); return; }
-
-  // Scale (z/x)
-  if (key == KEY_INC_SIZE) { obj.size += 0.05; return; }
-  if (key == KEY_DEC_SIZE) { obj.size = max(0.05, obj.size - 0.05); return; }
-
-  // Move selected object with arrows
-  if (keyCode == UP)    { obj.y -= 10; return; }
-  if (keyCode == DOWN)  { obj.y += 10; return; }
-  if (keyCode == LEFT)  { obj.x -= 10; return; }
-  if (keyCode == RIGHT) { obj.x += 10; return; }
 }
 
 
@@ -408,63 +562,165 @@ float thumbSize = 50;
 float selectedThumbSize = 70;
 float thumbSpacing = 60;
 float bannerHeight = 100;
+int infoBarHeight = 40;  
+
 void drawThumbnailBanner() {
   rectMode(CORNER);
-  if (imgFilenames.size() == 0) return;
-
-  // --- draw translucent bar at the bottom ---
   float y0 = height - bannerHeight;
+
+  // Opaque base to prevent flicker
   noStroke();
-  fill(0);                          
+  fill(0);
   rect(0, y0, width, bannerHeight);
 
-
-  // --- thumbnails centered horizontally, aligned to the bar vertically ---
-  int half = thumbCount / 2;
-  imageMode(CENTER); // center thumbnails on (x, y)
-
-  for (int i = 0; i < thumbCount; i++) {
-    int offset = i - half;
-    int idx = (currentImgIndex + offset + imgFilenames.size()) % imgFilenames.size();
-
-    PImage img = imgLibrary.get(imgFilenames.get(idx));
-    float w = (i == half) ? selectedThumbSize : thumbSize;
-    float h = (i == half) ? selectedThumbSize : thumbSize;
-
-    float x = width / 2 - (half * thumbSpacing) + i * thumbSpacing;
-    float y = y0 + bannerHeight / 2;  // vertical center of the bottom bar
-
-    image(img, x, y, w, h);
-
-    // Highlight for the selected (middle) thumbnail
-    if (i == half) {
-      noFill();
-      stroke(255, 0, 0);
-      strokeWeight(2);
-      rectMode(CENTER);
-      rect(x, y, w + 4, h + 4);
-      noStroke();
-    }
+  if (mode == MODE_PICK_BG) {
+    drawBgPicker(y0);
+  } else if (mode == MODE_PICK_CAT) {
+    drawCatalogPicker(y0);
+  } else { // MODE_PICK_IMG or MODE_MOVE_OBJ show image picker
+    drawImagePicker(y0);
   }
 }
+
+void drawBgPicker(float y0) {
+  if (bgFilenames.size() == 0) { drawBannerText("No backgrounds in library/background/"); return; }
+
+  int half = thumbCount / 2;
+  imageMode(CENTER);
+  for (int i = 0; i < thumbCount; i++) {
+    int offset = i - half;
+    int idx = (currentBgIndex + offset + bgFilenames.size()) % bgFilenames.size();
+    String rel = bgFilenames.get(idx);
+    PImage im = bgThumbs.get(rel);
+    float w = (i == half) ? selectedThumbSize : thumbSize;
+    float h = (i == half) ? selectedThumbSize : thumbSize;
+    float x = width / 2 - (half * thumbSpacing) + i * thumbSpacing;
+    float y = y0 + bannerHeight / 2;
+    if (im != null) image(im, x, y, w, h);
+    if (i == half) drawThumbHighlight(x, y, w, h);
+  }
+  drawBannerText("Choose BACKGROUND  •  ←/→ to pick, Enter to OK");
+}
+
+void drawCatalogPicker(float y0) {
+  int n = CATALOGS.length;
+  if (n == 0) { drawBannerText("No catalogs"); return; }
+
+  float pillW = 150;
+  float pillH = 44;
+
+  // dynamic spacing across width
+  float minSpacing = pillW + 20;                 // gap so they don't touch
+  float spacing = max(minSpacing, width / float(n + 1));
+  float startX = spacing;
+
+  float y = y0 + bannerHeight / 2;
+  rectMode(CENTER);
+  textAlign(CENTER, CENTER);
+  textSize(14);
+
+  for (int i = 0; i < n; i++) {
+    float x = startX + i * spacing;
+    boolean sel = (i == currentCatIndex);
+
+    // Orange pill
+    noStroke();
+    if (sel) fill(255, 165, 70);               
+    else     fill(255, 140, 0);                  
+    rect(x, y, pillW, pillH, 12);
+
+    // selected outline
+    if (sel) { noFill(); stroke(255); strokeWeight(2); rect(x, y, pillW, pillH, 12); noStroke(); }
+
+    // label
+    fill(0);
+    text(CATALOGS[i], x, y);
+  }
+
+  drawBannerText("Choose CATALOG  •  ←/→ to pick, Enter to OK");
+}
+
+
+
+void drawImagePicker(float y0) {
+  String cat = CATALOGS[currentCatIndex];
+  ArrayList<String> list = catFiles.get(cat);
+  if (list == null || list.size() == 0) { drawBannerText("No images in library/" + cat + "/"); return; }
+
+  int half = thumbCount / 2;
+  imageMode(CENTER);
+  for (int i = 0; i < thumbCount; i++) {
+    int offset = i - half;
+    int idx = (currentImgIndex + offset + list.size()) % list.size();
+    String rel = list.get(idx);
+    PImage im = imgLibrary.get(rel);
+    float w = (i == half) ? selectedThumbSize : thumbSize;
+    float h = (i == half) ? selectedThumbSize : thumbSize;
+    float x = width / 2 - (half * thumbSpacing) + i * thumbSpacing;
+    float y = y0 + bannerHeight / 2;
+    if (im != null) image(im, x, y, w, h);
+    if (i == half) drawThumbHighlight(x, y, w, h);
+  }
+  String hint = (mode == MODE_MOVE_OBJ)
+    ? "Move ←/→/↑/↓ • Rotate q/e • Scale z/x • Enter OK • s = Menu"
+    : "Choose IMAGE  •   ←/→ to pick, Enter to OK, ↑ to catalogs";
+  drawBannerText(hint);
+}
+
+void drawThumbHighlight(float x, float y, float w, float h) {
+  noFill(); stroke(255, 0, 0); strokeWeight(2);
+  rectMode(CENTER);
+  rect(x, y, w + 4, h + 4);
+  noStroke();
+}
+
+void drawBannerText(String s) {
+  float infoY0 = height - bannerHeight - infoBarHeight;
+  rectMode(CORNER);
+  noStroke();
+  fill(128, 0, 180);
+  rect(0, infoY0, width, infoBarHeight);
+
+  fill(255);
+  textSize(12);
+
+  // Left status
+  textAlign(LEFT, CENTER);
+  String status = "";
+  if (mode == MODE_PICK_BG)        status = "Mode: BACKGROUND";
+  else if (mode == MODE_PICK_CAT)  status = "Mode: CATALOG";
+  else if (mode == MODE_PICK_IMG)  status = "Mode: IMAGE (" + CATALOGS[currentCatIndex] + ")";
+  else if (mode == MODE_MOVE_OBJ)  status = "Mode: MOVE (" + (selectedObjIndex >= 0 ? objects.get(selectedObjIndex).name : "none") + ")";
+  text(status, 10, infoY0 + infoBarHeight/2);
+
+  textAlign(CENTER, CENTER);
+  text(s, width/2, infoY0 + infoBarHeight/2);
+
+  if (mode == MODE_MOVE_OBJ && selectedObjIndex >= 0) {
+    DrawingObject o = objects.get(selectedObjIndex);
+    String pos = "x=" + int(o.x) + " y=" + int(o.y) + " size=" + nf(o.size,1,2) + " rot=" + int(degrees(o.angle)) + "°";
+    textAlign(RIGHT, CENTER);
+    text(pos, width - 10, infoY0 + infoBarHeight/2);
+  }
+}
+
 boolean overStartButton() {
-  // place the button centered in the *background area*, not over the bottom banner
-  float y0 = height - bannerHeight;              // top edge of the banner
+  float y0 = height - bannerHeight;              
   float x = (width - startBtnW) / 2.0;
-  float y = (y0 - startBtnH) / 2.0;              // vertically center in the top region
+  float y = (y0 - startBtnH) / 2.0;             
   return mouseX >= x && mouseX <= x + startBtnW &&
          mouseY >= y && mouseY <= y + startBtnH;
 }
 
 void drawStartOverlay() {
-  // dim only the top region (keep banner visible)
-  float y0 = height - bannerHeight;
+  // dim only the top region (keep purple info bar AND picker visible)
+  float y0 = height - (bannerHeight + infoBarHeight);  // <-- changed
   noStroke();
   fill(0, 140);
   rectMode(CORNER);
   rect(0, 0, width, y0);
 
-  // button
+  // button ...
   float x = (width - startBtnW) / 2.0;
   float y = (y0 - startBtnH) / 2.0;
   boolean hover = overStartButton();
@@ -473,41 +729,83 @@ void drawStartOverlay() {
   stroke(255);
   strokeWeight(2);
   rect(x, y, startBtnW, startBtnH, 12);
-
-  // label
   fill(255);
   textAlign(CENTER, CENTER);
   textSize(20);
   text("START", x + startBtnW/2.0, y + startBtnH/2.0);
-
-
-  textSize(12);
-  fill(230);
-  text("BME/CS 479 LAB3",
-     10, height - bannerHeight - 10);
 }
+
 
 void drawBackgroundGif() {
   imageMode(CORNER);
+  rectMode(CORNER);
 
-  // Height available for the background (top region)
-  int availH = height - int(bannerHeight);
+  int uiTopY = height - int(bannerHeight + infoBarHeight);  
+  int leftX  = marginLeft;
+  int topY   = marginTop;
 
-  // Scale to cover or fit within the top region
-  float sx = width  / (float) bgGif.width;
-  float sy = availH / (float) bgGif.height;
+  int availW = width  - marginLeft - marginRight;
+  int availH = uiTopY - marginTop - marginBottom;
+
+  // default to the full “background window” area
+  bgDrawX = leftX;
+  bgDrawY = topY;
+  bgDrawW = availW;
+  bgDrawH = availH;
+
+  noStroke();
+  fill(0);
+  rect(leftX, topY, availW, availH);
+
+  int srcW = (bgGif != null) ? bgGif.width  : (bgStill != null ? bgStill.width  : availW);
+  int srcH = (bgGif != null) ? bgGif.height : (bgStill != null ? bgStill.height : availH);
+
+  float sx = availW / (float) srcW;
+  float sy = availH / (float) srcH;
   float s  = bgCover ? max(sx, sy) : min(sx, sy);
 
-  float tw = bgGif.width  * s;
-  float th = bgGif.height * s;
+  float tw = srcW * s;
+  float th = srcH * s;
+  float ox = leftX + (availW - tw) * 0.5f;
+  float oy = topY  + (availH - th) * 0.5f;
 
-  // Center the background within the top region
-  float ox = (width  - tw) * 0.5f;
-  float oy = (availH - th) * 0.5f;
+  int xi = Math.round(ox);
+  int yi = Math.round(oy);
+  int wi = Math.round(tw);
+  int hi = Math.round(th);
 
-  // Draw background in the top region only
-  image(bgGif, ox, oy, tw, th);
+  // clamp to stay above purple bar
+  if (yi + hi > uiTopY) hi = uiTopY - yi;
+  if (hi < 0) hi = 0;
+
+  if (bgGif != null) image(bgGif, xi, yi, wi, hi);
+  else if (bgStill != null) image(bgStill, xi, yi, wi, hi);
+
+  // record the exact drawn rect so UI bars can match it
+  bgDrawX = xi; bgDrawY = yi; bgDrawW = wi; bgDrawH = hi;
+
+  fill(0);
+  rect(0, uiTopY - 2, width, 2);
 }
+
+
+
+String makeUniqueName(String rel) {
+  String base = rel.substring(rel.lastIndexOf('/') + 1);
+  int dot = base.lastIndexOf('.');
+  if (dot >= 0) base = base.substring(0, dot);
+  int count = 1;
+  String name = base + count;
+  boolean exists = true;
+  while (exists) {
+    exists = false;
+    for (DrawingObject o : objects) {
+      if (o.name.equals(name)) { exists = true; count++; name = base + count; break; }
+    }
+  }
+  return name;
+}
+
 
 void scrollThumbnailLeft() {
   currentImgIndex = (currentImgIndex - 1 + imgFilenames.size()) % imgFilenames.size();
