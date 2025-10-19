@@ -1,6 +1,7 @@
 import java.io.File;
 import java.util.*;
 import gifAnimation.*;
+import processing.serial.*;
 
 // --- MODES ---
 final int MODE_PICK_BG  = 0;
@@ -15,7 +16,7 @@ int currentBgIndex = 0;
 int currentCatIndex = 0;    // index in CATALOGS
 int currentImgIndex = 0;    // index inside current catalog
 int bgDrawX = 0, bgDrawY = 0, bgDrawW = 0, bgDrawH = 0;
-
+boolean inPicker = false;
 
 // --- Background choices (thumbnails) ---
 ArrayList<String> bgFilenames = new ArrayList<String>();      // e.g., "library/background/foo.gif"
@@ -27,13 +28,14 @@ HashMap<String, ArrayList<String>> catFiles = new HashMap<String, ArrayList<Stri
 // --- Also support still background images (PNG/JPG) ---
 PImage bgStill = null;
 
+// Shared UI / layout
 boolean hasStarted = false;
 float startBtnW = 220;
 float startBtnH = 70;
 
 int marginTop = 40;
 int marginRight = 40;
-int marginBottom = 40;   
+int marginBottom = 40;
 int marginLeft = 40;
 
 boolean isImageFile(String low) {
@@ -79,7 +81,7 @@ void scanCatalogs() {
       if (isImageFile(low)) {
         String rel = "library/" + cat + "/" + name;
         list.add(rel);
-        // preview cache
+        // preview cache: load into imgLibrary keyed by rel
         if (!imgLibrary.containsKey(rel)) {
           PImage im = loadImage(rel);
           if (im != null) {
@@ -109,13 +111,13 @@ void setBackgroundFromPath(String rel) {
       bgStill = loadImage(rel);
       println("BG set to image: " + rel);
     }
-    // resize window to background + margins + banner
+    // resize window to background + margins + banner + infoBar
     int bw = (bgGif != null) ? bgGif.width : (bgStill != null ? bgStill.width : width);
     int bh = (bgGif != null) ? bgGif.height : (bgStill != null ? bgStill.height : height);
     surface.setResizable(true);
     surface.setSize(
       bw + marginLeft + marginRight,
-      bh + marginTop + marginBottom + infoBarHeight + int(bannerHeight) 
+      bh + marginTop + marginBottom + infoBarHeight + int(bannerHeight)
     );
 
   } catch (Exception e) {
@@ -124,10 +126,10 @@ void setBackgroundFromPath(String rel) {
 }
 
 
-
+// --- Objects / images library (merged from both codes) ---
 ArrayList<DrawingObject> objects;
-ArrayList<String> imgFilenames = new ArrayList<String>();      // basenames only
-HashMap<String, PImage> imgLibrary = new HashMap<String, PImage>(); // basename -> PImage
+ArrayList<String> imgFilenames = new ArrayList<String>();      // basenames only (legacy / generic loader)
+HashMap<String, PImage> imgLibrary = new HashMap<String, PImage>(); // basename or rel -> PImage
 
 int selectedObjIndex = -1; // selected object (-1 = none)
 
@@ -147,7 +149,7 @@ char KEY_REDO     = 'C';
 char KEY_BLANK    = 'd'; // placeholder
 char KEY_SHOW_MENU= 's';
 
-// Menu state (menu geometry lives in SaveMenu.pde)
+// Menu state (menu geometry lives in SaveMenu.pde if present)
 boolean showMenu = false;
 String inputFilename = "";
 boolean typingFilename = false;
@@ -178,12 +180,29 @@ void cleanImages() {
 }
 
 // -------------------------
+// Serial (from Codice 1)
+// -------------------------
+Serial myPort;
+String latestSerialMessage = "";
+boolean Fn=false;
+boolean tap=false;
+
+// -------------------------
 // Setup
 // -------------------------
 void setup() {
   size(800, 600);
-  cleanImages();             
+  cleanImages();
 
+  // Initialize serial as in Codice 1
+  try {
+    myPort = new Serial(this, "COM3", 115200);
+    println("Serial opened on COM3 115200");
+  } catch (Exception e) {
+    println("Failed to open serial on COM3: " + e.getMessage());
+  }
+
+  // Generic loader from data/library root (keeps legacy behavior)
   String libPath = dataPath("library");
   File folder = new File(libPath);
   if (!folder.exists()) folder.mkdirs();
@@ -191,9 +210,9 @@ void setup() {
 
   if (files != null && files.length > 0) {
     for (File f : files) {
-      if (!f.isFile()) continue;           
+      if (!f.isFile()) continue;
       String fname = f.getName();
-      if (fname.startsWith(".")) continue; 
+      if (fname.startsWith(".")) continue;
 
       String low = fname.toLowerCase();
       if (low.endsWith(".png") || low.endsWith(".gif") ||
@@ -201,9 +220,10 @@ void setup() {
         // load from data/library/
         PImage img = loadImage("library/" + fname); // GIF: thumbnail only; animation handled in DrawingObject
         if (img != null) {
-          imgLibrary.put(fname, img);
+          imgLibrary.put("library/" + fname, img); // store with rel key too
+          imgLibrary.put(fname, img); // also store by basename
           imgFilenames.add(fname);
-          println("Loaded: " + fname);
+          println("Loaded root: " + fname);
         } else {
           println("Failed to load: " + fname);
         }
@@ -212,37 +232,16 @@ void setup() {
   } else {
     println("No files found in data/library.");
   }
-  scanBackgrounds();   
-  scanCatalogs();      
-  
+
+  // Scan backgrounds and catalogs (Codice 2)
+  scanBackgrounds();
+  scanCatalogs();
+
   // Start the keyboard flow at "pick background"
   mode = MODE_PICK_BG;
   currentBgIndex  = 0;
   currentCatIndex = 0;
   currentImgIndex = 0;
-
-//  String[] bgPaths = { bgGifName, "library/" + bgGifName };
-//for (String p : bgPaths) {
-//  File f2 = new File(dataPath(p));
-//  if (f2.exists()) {
-//    try {
-//      bgGif = new Gif(this, p);
-//      bgGif.loop();
-//      println("Background loaded from: " + p);
-//      break;
-//    } catch (Exception e) {
-//      println("Failed to init background from: " + p);
-//    }
-//  }
-//}
-//  if (bgGif != null) {
-//    surface.setResizable(true);
-//    int newW = bgGif.width  + marginLeft + marginRight;
-//    int newH = bgGif.height + marginTop  + marginBottom + int(bannerHeight);
-//    surface.setSize(newW, newH);
-//  }
-
-
 
   objects = new ArrayList<DrawingObject>();
 }
@@ -252,10 +251,8 @@ void setup() {
 // -------------------------
 void draw() {
   background(0);
-  if (bgGif != null || bgStill != null) drawBackgroundGif();  
+  if (bgGif != null || bgStill != null) drawBackgroundGif();
   else background(200);
-
-
 
   // Draw all objects
   for (int i = 0; i < objects.size(); i++) {
@@ -274,37 +271,18 @@ void draw() {
       noStroke();
     }
   }
-drawThumbnailBanner();
-  //// Instructions
-  //fill(255);
-  //textSize(12);
-  //textAlign(LEFT, CENTER);
-  
-  //float helpY = height - bannerHeight/2;   // vertical center of the banner
-  
-  //text("START → A/D = select image | Click = place | Arrows = move | q/e = rotate",
-  //     10, helpY - 10);   // line 1
-  
-  //text("z/x = scale | q/e = rotate | c/C = undo/redo | s = Save Menu",
-  //     10, helpY + 10);   // line 
 
+  drawThumbnailBanner();
 
-
-  //if (imgFilenames.size() > 0) {
-  //  text("Placing: " + (currentImgIndex + 1) + " (" + imgFilenames.get(currentImgIndex) + ") | Editing: " + (selectedObjIndex >= 0 ? objects.get(selectedObjIndex).name : "none"), 10, 20);
-  //} else {
-  //  text("No images loaded! Put PNGs or GIFs in data/library/", 10, 20);
-  //}
-
-  // Update menu position
+  // Update menu position (if SaveMenu.pde present)
   menuX = (width - menuW) / 2;
   menuY = (height - menuH) / 2;
 
   // Draw menu if active
   if (showMenu) showSaveLoadMenu();
   if (!hasStarted) {
-  drawStartOverlay();  
-  return;             
+    drawStartOverlay();
+    return;
   }
 }
 
@@ -327,6 +305,67 @@ void pushUndo() {
 }
 
 // -------------------------
+// Place / Delete (sensor + keyboard support)
+// -------------------------
+boolean placingTrack = false; // toggle state from Codice 1
+
+void placeTrackAtCursor() {
+  // Place currently selected catalog image at mouseX, mouseY (if possible)
+  if (!hasStarted || showMenu) return;
+
+  // determine image to place: prefer current catalog selection if available, else fallback to root imgFilenames
+  String rel = null;
+  ArrayList<String> list = catFiles.get(CATALOGS[currentCatIndex]);
+  if (list != null && list.size() > 0) {
+    rel = list.get(currentImgIndex % list.size());
+  } else if (imgFilenames.size() > 0) {
+    rel = "library/" + imgFilenames.get(currentImgIndex % imgFilenames.size());
+  }
+
+  if (rel == null) return;
+
+  PImage img = imgLibrary.get(rel);
+  if (img == null) {
+    img = loadImage(rel);
+    if (img != null) imgLibrary.put(rel, img);
+  }
+  if (img == null) return;
+
+  pushUndo();
+
+  // generate univocal name for the object
+  int count = 1;
+  String baseName = rel.substring(rel.lastIndexOf('/') + 1);
+  int dot = baseName.lastIndexOf('.');
+  if (dot >= 0) baseName = baseName.substring(0, dot);
+  String name = baseName + count;
+
+  boolean exists = true;
+  while (exists) {
+    exists = false;
+    for (DrawingObject o : objects) {
+      if (o.name.equals(name)) {
+        exists = true;
+        count++;
+        name = baseName + count;
+        break;
+      }
+    }
+  }
+
+  objects.add(new DrawingObject(this, img, mouseX, mouseY, 1.0, 0, rel, name));
+  selectedObjIndex = objects.size() - 1;
+}
+
+void deleteSelectedTrack() {
+  if (selectedObjIndex >= 0 && selectedObjIndex < objects.size()) {
+    pushUndo();
+    objects.remove(selectedObjIndex);
+    selectedObjIndex = min(selectedObjIndex, objects.size() - 1);
+  }
+}
+
+// -------------------------
 // Mouse Input
 // -------------------------
 void mousePressed() {
@@ -334,45 +373,179 @@ void mousePressed() {
     if (overStartButton()) {
       hasStarted = true;
     }
-    return;  
+    return;
   }
 
   if (showMenu) {
     handleMenuClick();
     return;
   }
-  //if (imgFilenames.size() == 0) return;
 
-  //PImage img = imgLibrary.get(imgFilenames.get(currentImgIndex));
-  //pushUndo();
-
-  //// Generate unique name
-  //int count = 1;
-  //String baseName = imgFilenames.get(currentImgIndex);
-  //int dot = baseName.lastIndexOf('.');
-  //if (dot >= 0) baseName = baseName.substring(0, dot);
-  //String name = baseName + count;
-
-  //boolean exists = true;
-  //while (exists) {
-  //  exists = false;
-  //  for (DrawingObject o : objects) {
-  //    if (o.name.equals(name)) {
-  //      exists = true;
-  //      count++;
-  //      name = baseName + count;
-  //      break;
-  //    }
-  //  }
-  return;
-  }
-
-//  objects.add(new DrawingObject(this, img, mouseX, mouseY, 1.0, 0, imgFilenames.get(currentImgIndex), name));
-//  selectedObjIndex = objects.size() - 1;
-//}
+  
+  // Place using currently selected catalog image if any
+  placeTrackAtCursor();
+}
 
 // -------------------------
-// Keyboard Input
+// Serial Input 
+// -------------------------
+String readSerialMessage() {
+  // Returns the latest full line received from serial
+  return latestSerialMessage;
+}
+
+void serialEvent(Serial p) {
+  String input = p.readStringUntil('\n');
+  if (input != null) {
+    tap = true;
+    input = input.trim();
+    latestSerialMessage = input.replaceAll("^(\\d+)\\s*(\\w).*", "$1$2"); //number + first letter without spaces
+    println("SERIAL: " + latestSerialMessage);
+    processSerialMessage(latestSerialMessage);
+    latestSerialMessage = "";
+  } else {
+    tap = false;
+  }
+}
+
+void processSerialMessage(String msg) {
+  if (msg == null || msg.length() == 0) return;
+
+  // toggle Fn
+  if ("6P".equals(msg)) { Fn = true; return; }
+  if ("6R".equals(msg)) { Fn = false; return; }
+
+  // UNDO (9P without Fn) -- same as keyboard undo
+  if ("9P".equals(msg) && !Fn) {
+    if (undoStack.size() > 0) {
+      ignoreNextPush = true;
+      redoStack.add(copyObjectsList(objects));
+      if (redoStack.size() > maxHistory) redoStack.remove(0);
+      objects = undoStack.remove(undoStack.size() - 1);
+      selectedObjIndex = objects.size() - 1;
+      ignoreNextPush = false;
+    }
+    return;
+  }
+
+  // REDO (10P with Fn)
+  if ("10P".equals(msg) && Fn) {
+    if (redoStack.size() > 0) {
+      ignoreNextPush = true;
+      undoStack.add(copyObjectsList(objects));
+      if (undoStack.size() > maxHistory) undoStack.remove(0);
+      objects = redoStack.remove(redoStack.size() - 1);
+      selectedObjIndex = objects.size() - 1;
+      ignoreNextPush = false;
+    }
+    return;
+  }
+
+  // P5: place or delete (toggle behavior like Codice 1)
+  if ("5P".equals(msg)) {
+
+  // ---- 1️⃣ MENU: P5 = ENTER equivalente ----
+  if (mode == MODE_PICK_BG) {
+    if (bgFilenames.size() > 0) {
+      setBackgroundFromPath(bgFilenames.get(currentBgIndex));
+      mode = MODE_PICK_CAT;
+      println("P5 -> MODE_PICK_BG: set background");
+    }
+    return;
+  }
+
+  if (mode == MODE_PICK_CAT) {
+    currentImgIndex = 0;
+    mode = MODE_PICK_IMG;
+    println("P5 -> MODE_PICK_CAT: enter MODE_PICK_IMG");
+    return;
+  }
+
+  if (mode == MODE_PICK_IMG) {
+    // piazza un oggetto e passa a modalità MOVE
+    String cat = CATALOGS[currentCatIndex];
+    ArrayList<String> list = catFiles.get(cat);
+    if (list == null || list.size() == 0) return;
+
+    String rel = list.get(currentImgIndex);
+    PImage im = imgLibrary.get(rel);
+    if (im == null) im = loadImage(rel);
+
+    float cx = marginLeft + (width - marginLeft - marginRight) / 2.0;
+    float cy = marginTop  + (height - bannerHeight - marginTop - marginBottom) / 2.0;
+
+    pushUndo();
+    String name = makeUniqueName(rel);
+    objects.add(new DrawingObject(this, im, cx, cy, 1.0, 0, rel, name));
+    selectedObjIndex = objects.size() - 1;
+    mode = MODE_MOVE_OBJ;
+    println("P5 -> MODE_PICK_IMG: placed new object, entering MODE_MOVE_OBJ");
+    return;
+  }
+
+  // ---- 2️⃣ FUORI DAI MENU ----
+  // Se siamo in modalità di movimento di un oggetto, P5 conferma e basta
+  if (mode == MODE_MOVE_OBJ) {
+    println("P5 -> MODE_MOVE_OBJ: confirmed placement");
+    // non cambia modalità, non crea nuovi oggetti
+    // eventualmente puoi aggiungere qui un flag "confirmed = true" se ti serve
+    return;
+  }
+
+  // ---- 3️⃣ Se siamo in modalità tracciato (track) ----
+  if (Fn) {
+    deleteSelectedTrack();
+    placingTrack = false;
+    return;
+  }
+
+  if (!placingTrack) {
+    pushUndo();
+    placeTrackAtCursor();
+    placingTrack = true;
+    return;
+  } else {
+    placingTrack = false;
+    selectedObjIndex = objects.size() - 1;
+    return;
+  }
+}
+
+
+  // If no selected object, ignore transform commands
+  if (objects.size() == 0 || selectedObjIndex < 0) {
+    // Some sensor commands (like movement) require an object; ignore if none
+    return;
+  }
+
+  DrawingObject obj = objects.get(selectedObjIndex);
+
+  // For discrete sensor commands, save state BEFORE modifying (undo checkpoint)
+  if ("1P".equals(msg) || "2P".equals(msg) || "3P".equals(msg) || "4P".equals(msg) ||
+      "7P".equals(msg) || "8P".equals(msg)) {
+    pushUndo();
+  }
+
+  // Motion
+  if ("1P".equals(msg)) { obj.y -= 10; return; }
+  if ("2P".equals(msg)) { obj.x += 10; return; }
+  if ("3P".equals(msg)) { obj.y += 10; return; }
+  if ("4P".equals(msg)) { obj.x -= 10; return; }
+
+  // Rotation (8P)
+  if ("8P".equals(msg)) {
+    if (Fn) obj.angle -= radians(5);
+    else    obj.angle += radians(5);
+    return;
+  }
+
+  // Scale (7P)
+  if ("7P".equals(msg) && Fn)  { obj.size += 0.05; return; }
+  if ("7P".equals(msg) && !Fn) { obj.size = max(0.05, obj.size - 0.05); return; }
+}
+
+// -------------------------
+// Keyboard Input (from Codice 2, preserved)
 // -------------------------
 void keyPressed() {
   // Block everything until START
@@ -451,7 +624,7 @@ void keyPressed() {
 
         pushUndo();
         String name = makeUniqueName(rel);
-        objects.add(new DrawingObject(this, im, cx, cy, 1.0, 0, rel, name)); 
+        objects.add(new DrawingObject(this, im, cx, cy, 1.0, 0, rel, name));
         selectedObjIndex = objects.size() - 1;
         mode = MODE_MOVE_OBJ;  // now arrows move the object
         return;
@@ -480,8 +653,6 @@ void keyPressed() {
     }
   }
 }
-
-
 
 // -------------------------
 // CSV Save/Load
@@ -542,7 +713,7 @@ DrawingObject createObjectFromCSV(String line) {
   PImage img = imgLibrary.get(fileName);
   if (img == null) {
     // try to load on-demand from library/
-    img = loadImage("library/" + fileName);
+    img = loadImage(fileName);
     if (img != null) {
       imgLibrary.put(fileName, img);
     } else {
@@ -555,14 +726,14 @@ DrawingObject createObjectFromCSV(String line) {
 }
 
 // -------------------------
-// Thumbnail Helpers
+// Thumbnail Helpers (from Codice 2)
 // -------------------------
 int thumbCount = 5; // must be odd
 float thumbSize = 50;
 float selectedThumbSize = 70;
 float thumbSpacing = 60;
 float bannerHeight = 100;
-int infoBarHeight = 40;  
+int infoBarHeight = 40;
 
 void drawThumbnailBanner() {
   rectMode(CORNER);
@@ -574,11 +745,14 @@ void drawThumbnailBanner() {
   rect(0, y0, width, bannerHeight);
 
   if (mode == MODE_PICK_BG) {
+    inPicker=true;
     drawBgPicker(y0);
   } else if (mode == MODE_PICK_CAT) {
+    inPicker=true;
     drawCatalogPicker(y0);
   } else { // MODE_PICK_IMG or MODE_MOVE_OBJ show image picker
     drawImagePicker(y0);
+    inPicker=false;
   }
 }
 
@@ -625,8 +799,8 @@ void drawCatalogPicker(float y0) {
 
     // Orange pill
     noStroke();
-    if (sel) fill(255, 165, 70);               
-    else     fill(255, 140, 0);                  
+    if (sel) fill(255, 165, 70);
+    else     fill(255, 140, 0);
     rect(x, y, pillW, pillH, 12);
 
     // selected outline
@@ -639,8 +813,6 @@ void drawCatalogPicker(float y0) {
 
   drawBannerText("Choose CATALOG  •  ←/→ to pick, Enter to OK");
 }
-
-
 
 void drawImagePicker(float y0) {
   String cat = CATALOGS[currentCatIndex];
@@ -705,9 +877,9 @@ void drawBannerText(String s) {
 }
 
 boolean overStartButton() {
-  float y0 = height - bannerHeight;              
+  float y0 = height - bannerHeight;
   float x = (width - startBtnW) / 2.0;
-  float y = (y0 - startBtnH) / 2.0;             
+  float y = (y0 - startBtnH) / 2.0;
   return mouseX >= x && mouseX <= x + startBtnW &&
          mouseY >= y && mouseY <= y + startBtnH;
 }
@@ -735,12 +907,11 @@ void drawStartOverlay() {
   text("START", x + startBtnW/2.0, y + startBtnH/2.0);
 }
 
-
 void drawBackgroundGif() {
   imageMode(CORNER);
   rectMode(CORNER);
 
-  int uiTopY = height - int(bannerHeight + infoBarHeight);  
+  int uiTopY = height - int(bannerHeight + infoBarHeight);
   int leftX  = marginLeft;
   int topY   = marginTop;
 
@@ -788,8 +959,6 @@ void drawBackgroundGif() {
   rect(0, uiTopY - 2, width, 2);
 }
 
-
-
 String makeUniqueName(String rel) {
   String base = rel.substring(rel.lastIndexOf('/') + 1);
   int dot = base.lastIndexOf('.');
@@ -806,7 +975,6 @@ String makeUniqueName(String rel) {
   return name;
 }
 
-
 void scrollThumbnailLeft() {
   currentImgIndex = (currentImgIndex - 1 + imgFilenames.size()) % imgFilenames.size();
 }
@@ -814,3 +982,11 @@ void scrollThumbnailLeft() {
 void scrollThumbnailRight() {
   currentImgIndex = (currentImgIndex + 1) % imgFilenames.size();
 }
+
+// ------------------------------------------------------------------
+// NOTE: This file assumes the presence of the auxiliary files used
+// by the original sketches, e.g. SaveMenu.pde (for menuX/menuW/menuH and
+// handleMenuClick / handleMenuKey / showSaveLoadMenu) and DrawingObject.pde.
+// Those definitions were present in your original project; this merge
+// retains and integrates the serial handling into the UI flow.
+// ------------------------------------------------------------------
