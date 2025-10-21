@@ -3,6 +3,7 @@ import java.util.*;
 import gifAnimation.*;
 import processing.serial.*;
 
+//added
 // --- MODES ---
 final int MODE_PICK_BG  = 0;
 final int MODE_PICK_CAT = 1;
@@ -918,7 +919,7 @@ void drawBackgroundGif() {
   int availW = width  - marginLeft - marginRight;
   int availH = uiTopY - marginTop - marginBottom;
 
-  // default to the full “background window” area
+  // default to the full "background window" area
   bgDrawX = leftX;
   bgDrawY = topY;
   bgDrawW = availW;
