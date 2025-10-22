@@ -18,6 +18,7 @@ int currentCatIndex = 0;    // index in CATALOGS
 int currentImgIndex = 0;    // index inside current catalog
 int bgDrawX = 0, bgDrawY = 0, bgDrawW = 0, bgDrawH = 0;
 boolean inPicker = false;
+boolean moveObjConfirmed = false;
 
 // --- Background choices (thumbnails) ---
 ArrayList<String> bgFilenames = new ArrayList<String>();      // e.g., "library/background/foo.gif"
@@ -195,7 +196,7 @@ void setup() {
   size(800, 600);
   cleanImages();
 
-  // Initialize serial as in Codice 1
+  // Initialize serial 
   try {
     myPort = new Serial(this, "COM3", 115200);
     println("Serial opened on COM3 115200");
@@ -363,6 +364,8 @@ void deleteSelectedTrack() {
     pushUndo();
     objects.remove(selectedObjIndex);
     selectedObjIndex = min(selectedObjIndex, objects.size() - 1);
+    placingTrack = false;
+    moveObjConfirmed = false;
   }
 }
 
@@ -424,6 +427,8 @@ void processSerialMessage(String msg) {
       if (redoStack.size() > maxHistory) redoStack.remove(0);
       objects = undoStack.remove(undoStack.size() - 1);
       selectedObjIndex = objects.size() - 1;
+      moveObjConfirmed = false;
+      placingTrack = false;
       ignoreNextPush = false;
     }
     return;
@@ -437,15 +442,17 @@ void processSerialMessage(String msg) {
       if (undoStack.size() > maxHistory) undoStack.remove(0);
       objects = redoStack.remove(redoStack.size() - 1);
       selectedObjIndex = objects.size() - 1;
+      moveObjConfirmed = false;
+      placingTrack = false; 
       ignoreNextPush = false;
     }
     return;
   }
 
-  // P5: place or delete (toggle behavior like Codice 1)
-  if ("5P".equals(msg)) {
+// P5: place, confirm, or delete (toggle behavior)
+if ("5P".equals(msg)) {
 
-  // ---- 1️⃣ MENU: P5 = ENTER equivalente ----
+  // ---- MENU: P5 = ENTER equivalente ----
   if (mode == MODE_PICK_BG) {
     if (bgFilenames.size() > 0) {
       setBackgroundFromPath(bgFilenames.get(currentBgIndex));
@@ -463,7 +470,7 @@ void processSerialMessage(String msg) {
   }
 
   if (mode == MODE_PICK_IMG) {
-    // piazza un oggetto e passa a modalità MOVE
+    // piazza un oggetto e passa a modalità MOVE (ready to edit)
     String cat = CATALOGS[currentCatIndex];
     ArrayList<String> list = catFiles.get(cat);
     if (list == null || list.size() == 0) return;
@@ -479,45 +486,109 @@ void processSerialMessage(String msg) {
     String name = makeUniqueName(rel);
     objects.add(new DrawingObject(this, im, cx, cy, 1.0, 0, rel, name));
     selectedObjIndex = objects.size() - 1;
+
+    // entering edit/placement state
     mode = MODE_MOVE_OBJ;
-    println("P5 -> MODE_PICK_IMG: placed new object, entering MODE_MOVE_OBJ");
+    placingTrack = true;        // we are currently placing/editing
+    moveObjConfirmed = false;   // not yet confirmed
+    println("P5 -> MODE_PICK_IMG: placed new object, entering MODE_MOVE_OBJ (placingTrack=true)");
     return;
   }
 
-  // ---- 2️OUTSIDE MENUS ----
-  // If we are in the mode of moving the objects,
-  if (mode == MODE_MOVE_OBJ) {
-    println("P5 -> MODE_MOVE_OBJ: confirmed placement");
-    // non cambia modalità, non crea nuovi oggetti
-    // eventualmente puoi aggiungere qui un flag "confirmed = true" se ti serve
-    return;
-  }
-
-  //if Fn is pressed we're deleting the selected image
+  // ---- OUTSIDE MENUS ----
+  // If Fn + P5 -> delete current selection (works both when placing or confirmed)
   if (Fn) {
     deleteSelectedTrack();
-    placingTrack = false;
+    // deleteSelectedTrack() already resets placingTrack and moveObjConfirmed
+    println("P5 + Fn -> deleted current object");
     return;
   }
-  
-  if (!placingTrack) {
+
+  // If we are currently placing (object exists and is editable) -> confirm placement
+  if (placingTrack) {
+    placingTrack = false;
+    moveObjConfirmed = true;   // now the object is fixed but still selected
+    println("P5 -> confirmed placement (placingTrack=false, moveObjConfirmed=true)");
+    return;
+  }
+
+  // If the object had been confirmed already (moveObjConfirmed true), pressing P5 starts a new placement
+  if (moveObjConfirmed) {
+    // start new placement at cursor
     pushUndo();
     placeTrackAtCursor();
     placingTrack = true;
-    return;
-  } else { //here we're placing the track --> we also increase its index
-    placingTrack = false;
-    selectedObjIndex = objects.size() - 1;
+    moveObjConfirmed = false;
+    println("P5 -> started placing new object after previous confirmation");
     return;
   }
+
+  // Fallback: if nothing else, start placement at cursor
+  pushUndo();
+  placeTrackAtCursor();
+  placingTrack = true;
+  moveObjConfirmed = false;
+  println("P5 -> started placing new object (fallback)");
+  return;
 }
 
+// --- MENU NAVIGATION WITH SENSORS (P1–P4) ---
+// Allow navigation when in pick modes OR when object is confirmed (so LEFT/RIGHT won't move the object)
+if (mode == MODE_PICK_BG || mode == MODE_PICK_CAT || mode == MODE_PICK_IMG || (mode == MODE_MOVE_OBJ && moveObjConfirmed)) {
+
+  if ("2P".equals(msg)) { // RIGHT
+    if (mode == MODE_PICK_BG) {
+      if (bgFilenames.size() > 0) currentBgIndex = (currentBgIndex + 1) % bgFilenames.size();
+    } else if (mode == MODE_PICK_CAT) {
+      currentCatIndex = (currentCatIndex + 1) % CATALOGS.length;
+    } else if (mode == MODE_PICK_IMG) {
+      String cat = CATALOGS[currentCatIndex];
+      ArrayList<String> list = catFiles.get(cat);
+      if (list != null && list.size() > 0) currentImgIndex = (currentImgIndex + 1) % list.size();
+    } else if (mode == MODE_MOVE_OBJ && moveObjConfirmed) {
+      // when confirmed, treat left/right like image picker navigation (use same catalog)
+      String cat = CATALOGS[currentCatIndex];
+      ArrayList<String> list = catFiles.get(cat);
+      if (list != null && list.size() > 0) currentImgIndex = (currentImgIndex + 1) % list.size();
+    }
+    return;
+  }
+
+  if ("4P".equals(msg)) { // LEFT
+    if (mode == MODE_PICK_BG) {
+      if (bgFilenames.size() > 0) currentBgIndex = (currentBgIndex - 1 + bgFilenames.size()) % bgFilenames.size();
+    } else if (mode == MODE_PICK_CAT) {
+      currentCatIndex = (currentCatIndex - 1 + CATALOGS.length) % CATALOGS.length;
+    } else if (mode == MODE_PICK_IMG) {
+      String cat = CATALOGS[currentCatIndex];
+      ArrayList<String> list = catFiles.get(cat);
+      if (list != null && list.size() > 0) currentImgIndex = (currentImgIndex - 1 + list.size()) % list.size();
+    } else if (mode == MODE_MOVE_OBJ && moveObjConfirmed) {
+      String cat = CATALOGS[currentCatIndex];
+      ArrayList<String> list = catFiles.get(cat);
+      if (list != null && list.size() > 0) currentImgIndex = (currentImgIndex - 1 + list.size()) % list.size();
+    }
+    return;
+  }
+
+  
+}
+// DOWN (3P)
+  //if ("3P".equals(msg)) {
+    //if (mode == MODE_PICK_IMG) mode = MODE_PICK_CAT;  // esempio: ↑ per tornare ai cataloghi
+    //return;
+  //}
+  //if ("1P".equals(msg)) { // UP – we can ignore it or use it as "EXIT"
+    //if (mode == MODE_PICK_CAT) mode = MODE_PICK_IMG; // ↓ per entrare nelle immagini
+    //return;
+  //}
 
   // If no selected object, ignore transform commands
   if (objects.size() == 0 || selectedObjIndex < 0) {
     // Some sensor commands (like movement) require an object; ignore if none
     return;
   }
+
 
   DrawingObject obj = objects.get(selectedObjIndex);
 
