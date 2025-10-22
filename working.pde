@@ -429,8 +429,8 @@ void processSerialMessage(String msg) {
     return;
   }
 
-  // REDO (10P with Fn)
-  if ("10P".equals(msg) && Fn) {
+  // REDO (9P with Fn)
+  if ("9P".equals(msg) && Fn) {
     if (redoStack.size() > 0) {
       ignoreNextPush = true;
       undoStack.add(copyObjectsList(objects));
@@ -484,8 +484,8 @@ void processSerialMessage(String msg) {
     return;
   }
 
-  // ---- 2️⃣ FUORI DAI MENU ----
-  // Se siamo in modalità di movimento di un oggetto, P5 conferma e basta
+  // ---- 2️OUTSIDE MENUS ----
+  // If we are in the mode of moving the objects,
   if (mode == MODE_MOVE_OBJ) {
     println("P5 -> MODE_MOVE_OBJ: confirmed placement");
     // non cambia modalità, non crea nuovi oggetti
@@ -493,19 +493,19 @@ void processSerialMessage(String msg) {
     return;
   }
 
-  // ---- 3️⃣ Se siamo in modalità tracciato (track) ----
+  //if Fn is pressed we're deleting the selected image
   if (Fn) {
     deleteSelectedTrack();
     placingTrack = false;
     return;
   }
-
+  
   if (!placingTrack) {
     pushUndo();
     placeTrackAtCursor();
     placingTrack = true;
     return;
-  } else {
+  } else { //here we're placing the track --> we also increase its index
     placingTrack = false;
     selectedObjIndex = objects.size() - 1;
     return;
@@ -543,6 +543,21 @@ void processSerialMessage(String msg) {
   // Scale (7P)
   if ("7P".equals(msg) && Fn)  { obj.size += 0.05; return; }
   if ("7P".equals(msg) && !Fn) { obj.size = max(0.05, obj.size - 0.05); return; }
+  
+  //Save
+  // --- OPEN SAVE MENU (P10 + Fn) ---
+if ("10P".equals(msg) && Fn) {
+  // same action as KEYPRESSED = 's'
+  showMenu = true;
+  typingFilename = false;
+  menuX = (width - menuW) / 2;
+  menuY = (height - menuH) / 2;
+
+  //println("P10 + Fn -> Open save menu");
+  handleMenuKey('s'); 
+  return;
+}
+
 }
 
 // -------------------------
