@@ -354,16 +354,6 @@ void deleteSelectedTrack() {
 // -------------------------
 // Mouse Input
 // -------------------------
-void mousePressed() {
-  if (showMenu) {
-    handleMenuClick();
-    return;
-  }
-
-  
-  // Place using currently selected catalog image if any
-  //placeTrackAtCursor();
-}
 
 
 
