@@ -1,35 +1,51 @@
-// Menu pop-up dimensions
-float menuW = 400;
-float menuH = 300;
-
+// --- Menu layout setup ---
+float menuW = 450;
+float menuH = 320;
 float buttonW = 150;
 float buttonH = 40;
 float buttonSpacing = 20;
 float menuX, menuY;
 
-float btnStartY = menuY + menuH * 0.3;       // start ~30% down from top
-float btnGap = buttonH + buttonSpacing;
-
-float saveY  = btnStartY;
-float loadY  = btnStartY + btnGap;
-float closeY = btnStartY + 2 * btnGap;
-
+// --- Menu state variables ---
+boolean showMenu = false;
 boolean typingFilename = false;
 boolean typingForSave = false;
 String inputFilename = "";
-boolean showMenu = false;
+
+// --- Button navigation ---
+int selectedMenuButton = 0; // 0 = Save, 1 = Load, 2 = Close
+String[] menuButtons = {"Save", "Load", "Close"};
+
+// --- Virtual keyboard setup ---
+String[][] keyboardRows = {
+  {"q","w","e","r","t","y","u","i","o","p"},
+  {"a","s","d","f","g","h","j","k","l"},
+  {"z","x","c","v","b","n","m"},
+  {"space",".","backspace","enter","back"}
+};
+
+float keyW = 40;
+float keyH = 40;
+float keySpacing = 8;
+float keyboardY;
+int selectedRow = 0;
+int selectedCol = 0;
+
+// ===========================================================
+// MENU DISPLAY
+// ===========================================================
 
 void showSaveLoadMenu() {
-  rectMode(CORNER);  // Make sure rect(x,y,w,h) is top-left corner
+  rectMode(CORNER);
   menuX = (width - menuW) / 2;
   menuY = (height - menuH) / 2;
-  
-  // Semi-transparent background for pop-up
+
+  // Dim background
   fill(0, 180);
   noStroke();
   rect(0, 0, width, height);
 
-  // Menu box with shadow
+  // Main box
   fill(240);
   stroke(50, 50, 50, 100);
   strokeWeight(3);
@@ -42,48 +58,46 @@ void showSaveLoadMenu() {
   textAlign(CENTER, CENTER);
   text("Save / Load Menu", menuX + menuW / 2, menuY + 30);
 
-  // Buttons positions
+  // --- Buttons (Save, Load, Close) ---
   float bx = menuX + (menuW - buttonW) / 2;
   float saveY = menuY + 70;
   float loadY = saveY + buttonH + buttonSpacing;
   float closeY = loadY + buttonH + buttonSpacing;
 
-  // Button hover check
-  boolean hoverSave = mouseX > bx && mouseX < bx + buttonW && mouseY > saveY && mouseY < saveY + buttonH;
-  boolean hoverLoad = mouseX > bx && mouseX < bx + buttonW && mouseY > loadY && mouseY < loadY + buttonH;
-  boolean hoverClose = mouseX > bx && mouseX < bx + buttonW && mouseY > closeY && mouseY < closeY + buttonH;
+  for (int i = 0; i < menuButtons.length; i++) {
+    float by = saveY + i * (buttonH + buttonSpacing);
 
-  // Save button
-  fill(hoverSave ? color(80, 180, 80) : color(100, 200, 100));
-  rect(bx, saveY, buttonW, buttonH, 10);
-  fill(0);
-  textSize(18);
-  textAlign(CENTER, CENTER);
-  text("Save", bx + buttonW / 2, saveY + buttonH / 2);
+    // Highlight selected button
+    if (!typingFilename && i == selectedMenuButton) {
+      stroke(255, 255, 0);
+      strokeWeight(3);
+    } else {
+      noStroke();
+    }
 
-  // Load button
-  fill(hoverLoad ? color(80, 80, 180) : color(100, 100, 200));
-  rect(bx, loadY, buttonW, buttonH, 10);
-  fill(255);
-  text("Load", bx + buttonW / 2, loadY + buttonH / 2);
+    // Button color
+    if (i == 0) fill(100, 200, 100);      // Save
+    else if (i == 1) fill(100, 100, 200); // Load
+    else fill(200, 100, 100);             // Close
 
-  // Close button
-  fill(hoverClose ? color(180, 80, 80) : color(200, 100, 100));
-  rect(bx, closeY, buttonW, buttonH, 10);
-  fill(0);
-  text("Close", bx + buttonW / 2, closeY + buttonH / 2);
+    rect(bx, by, buttonW, buttonH, 10);
+    fill(0);
+    textAlign(CENTER, CENTER);
+    text(menuButtons[i], bx + buttonW / 2, by + buttonH / 2);
+  }
+  noStroke();
 
-  // Input box for filename if typing
+  // --- Filename input & virtual keyboard ---
   if (typingFilename) {
     float inputX = menuX + 25;
-    float inputY = btnStartY + 3 * btnGap + 10;  // a little gap below last button
+    float inputY = closeY + 85;
     float inputW = menuW - 50;
     float inputH = 35;
 
     fill(0);
+    textAlign(CENTER, BOTTOM);
     textSize(16);
-    textAlign(LEFT, BOTTOM);
-    text(typingForSave ? "Enter filename to SAVE:" : "Enter filename to LOAD:", inputX, inputY - 200);
+    text(typingForSave ? "Enter filename to SAVE:" : "Enter filename to LOAD:", menuX + menuW / 2, inputY - 15);
 
     fill(255);
     stroke(150);
@@ -93,50 +107,141 @@ void showSaveLoadMenu() {
 
     fill(0);
     textAlign(LEFT, CENTER);
-    textSize(16);
-    text(inputFilename + "|", inputX + 8, inputY + inputH / 2); // cursor
+    text(inputFilename + "|", inputX + 8, inputY + inputH / 2);
+
+    drawVirtualKeyboard(inputY + 50);
   }
 }
 
+// ===========================================================
+// VIRTUAL KEYBOARD DISPLAY
+// ===========================================================
 
-void handleMenuClick() {
-  float bx = menuX + (menuW - buttonW) / 2;
-  float saveY = menuY + 70;
-  float loadY = saveY + buttonH + buttonSpacing;
-  float closeY = loadY + buttonH + buttonSpacing;
+void drawVirtualKeyboard(float startY) {
+  keyboardY = startY;
+  textSize(16);
+  textAlign(CENTER, CENTER);
 
-  // Save
-  if (mouseX > bx && mouseX < bx + buttonW && mouseY > saveY && mouseY < saveY + buttonH) {
-    inputFilename = "";
-    typingFilename = true;
-    typingForSave = true;
-    return;
-  }
+  for (int r = 0; r < keyboardRows.length; r++) {
+    String[] row = keyboardRows[r];
+    float rowWidth = 0;
+    for (String key : row) {
+      float w = key.equals("space") ? keyW * 3 :
+                key.equals("backspace") ? keyW * 2 :
+                key.equals("enter") ? keyW * 2 :
+                key.equals("back") ? keyW * 2 : keyW;
+      rowWidth += w + keySpacing;
+    }
+    float rowX = menuX + (menuW - rowWidth + keySpacing) / 2;
+    float y = startY + r * (keyH + keySpacing);
 
-  // Load
-  if (mouseX > bx && mouseX < bx + buttonW && mouseY > loadY && mouseY < loadY + buttonH) {
-    inputFilename = "";
-    typingFilename = true;
-    typingForSave = false;
-    return;
-  }
+    float x = rowX;
+    for (int c = 0; c < row.length; c++) {
+      String key = row[c];
+      float w = key.equals("space") ? keyW * 3 :
+                key.equals("backspace") ? keyW * 2 :
+                key.equals("enter") ? keyW * 2 :
+                key.equals("back") ? keyW * 2 : keyW;
 
-  // Close
-  if (mouseX > bx && mouseX < bx + buttonW && mouseY > closeY && mouseY < closeY + buttonH) {
-    showMenu = false;
-    typingFilename = false;
-    typingForSave = false;
-    return;
+      // Highlight current selection
+      if (r == selectedRow && c == selectedCol) {
+        fill(80, 160, 255);
+      } else {
+        // Color code the back button differently
+        if (key.equals("back")) {
+          fill(255, 200, 100);
+        } else {
+          fill(220);
+        }
+      }
+      stroke(100);
+      rect(x, y, w, keyH, 6);
+      fill(0);
+      text(key, x + w / 2, y + keyH / 2);
+      x += w + keySpacing;
+    }
   }
 }
 
+// ===========================================================
+// MENU KEY HANDLER
+// ===========================================================
 
 void handleMenuKey(char k) {
-  if (!showMenu || !typingFilename) return;
+  if (!showMenu) return;
 
-  if (k == BACKSPACE) {
-    if (inputFilename.length() > 0) inputFilename = inputFilename.substring(0, inputFilename.length() - 1);
+  // --- MENU BUTTON SELECTION MODE ---
+  if (!typingFilename) {
+    if (k == 'w' || k == 'W') {
+      selectedMenuButton--;
+      if (selectedMenuButton < 0) selectedMenuButton = menuButtons.length - 1;
+    } else if (k == 's' || k == 'S') {
+      selectedMenuButton++;
+      if (selectedMenuButton >= menuButtons.length) selectedMenuButton = 0;
+    } else if (k == ENTER || k == RETURN) {
+      // "Click" selected button
+      if (selectedMenuButton == 0) { // Save
+        inputFilename = "";
+        typingFilename = true;
+        typingForSave = true;
+        selectedRow = 0;
+        selectedCol = 0;
+      } else if (selectedMenuButton == 1) { // Load
+        inputFilename = "";
+        typingFilename = true;
+        typingForSave = false;
+        selectedRow = 0;
+        selectedCol = 0;
+      } else if (selectedMenuButton == 2) { // Close
+        showMenu = false;
+      }
+    } else if (k == ESC) {
+      showMenu = false;
+    }
+    return;
+  }
+
+  // --- FILENAME TYPING MODE ---
+  if (k == 'a' || k == 'A') {
+    selectedCol--;
+    if (selectedCol < 0) selectedCol = keyboardRows[selectedRow].length - 1;
+  } else if (k == 'd' || k == 'D') {
+    selectedCol++;
+    if (selectedCol >= keyboardRows[selectedRow].length) selectedCol = 0;
+  } else if (k == 'w' || k == 'W') {
+    selectedRow--;
+    if (selectedRow < 0) selectedRow = keyboardRows.length - 1;
+    selectedCol = min(selectedCol, keyboardRows[selectedRow].length - 1);
+  } else if (k == 's' || k == 'S') {
+    selectedRow++;
+    if (selectedRow >= keyboardRows.length) selectedRow = 0;
+    selectedCol = min(selectedCol, keyboardRows[selectedRow].length - 1);
   } else if (k == ENTER || k == RETURN) {
+    pressSelectedKey();
+  } else if (k == BACKSPACE) {
+    if (inputFilename.length() > 0)
+      inputFilename = inputFilename.substring(0, inputFilename.length() - 1);
+  } else if (k == ESC) {
+    // ESC also goes back to menu
+    typingFilename = false;
+    typingForSave = false;
+    inputFilename = "";
+  }
+}
+
+// ===========================================================
+// KEYBOARD PRESS ACTIONS
+// ===========================================================
+
+void pressSelectedKey() {
+  String key = keyboardRows[selectedRow][selectedCol];
+
+  if (key.equals("space")) {
+    inputFilename += " ";
+  } else if (key.equals("backspace")) {
+    if (inputFilename.length() > 0)
+      inputFilename = inputFilename.substring(0, inputFilename.length() - 1);
+  } else if (key.equals("enter")) {
     if (typingForSave) {
       saveObjectsCSV(inputFilename + ".csv");
     } else {
@@ -145,7 +250,24 @@ void handleMenuKey(char k) {
     typingFilename = false;
     showMenu = false;
     typingForSave = false;
-  } else if (k != CODED) {
-    inputFilename += k;
+    inputFilename = "";
+  } else if (key.equals("back")) {
+    // Go back to main menu
+    typingFilename = false;
+    typingForSave = false;
+    inputFilename = "";
+  } else {
+    inputFilename += key;
+  }
+}
+
+// ===========================================================
+// MOUSE HANDLER
+// ===========================================================
+
+void mousePressed() {
+  if (showMenu) {
+    // Optionally handle clicks later if needed
+    return;
   }
 }
