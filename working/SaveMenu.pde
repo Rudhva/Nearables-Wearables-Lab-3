@@ -169,16 +169,19 @@ void drawVirtualKeyboard(float startY) {
 
 void handleMenuKey(char k) {
   if (!showMenu) return;
+  
+  // Get the latest serial message for comparison
+  String serialMsg = readSerialMessage();
 
   // --- MENU BUTTON SELECTION MODE ---
   if (!typingFilename) {
-    if (k == 'w' || k == 'W') {
+    if (k == 'w' || k == 'W' || "1P".equals(serialMsg)) { // Up
       selectedMenuButton--;
       if (selectedMenuButton < 0) selectedMenuButton = menuButtons.length - 1;
-    } else if (k == 's' || k == 'S') {
+    } else if (k == 's' || k == 'S' || "3P".equals(serialMsg)) { // Down
       selectedMenuButton++;
       if (selectedMenuButton >= menuButtons.length) selectedMenuButton = 0;
-    } else if (k == ENTER || k == RETURN) {
+    } else if (k == ENTER || k == RETURN || "5P".equals(serialMsg)) { // OK/Enter
       // "Click" selected button
       if (selectedMenuButton == 0) { // Save
         inputFilename = "";
@@ -202,21 +205,21 @@ void handleMenuKey(char k) {
   }
 
   // --- FILENAME TYPING MODE ---
-  if (k == 'a' || k == 'A') {
+  if (k == 'a' || k == 'A' || "4P".equals(serialMsg)) { // Left
     selectedCol--;
     if (selectedCol < 0) selectedCol = keyboardRows[selectedRow].length - 1;
-  } else if (k == 'd' || k == 'D') {
+  } else if (k == 'd' || k == 'D' || "2P".equals(serialMsg)) { // Right
     selectedCol++;
     if (selectedCol >= keyboardRows[selectedRow].length) selectedCol = 0;
-  } else if (k == 'w' || k == 'W') {
+  } else if (k == 'w' || k == 'W' || "1P".equals(serialMsg)) { // Up
     selectedRow--;
     if (selectedRow < 0) selectedRow = keyboardRows.length - 1;
     selectedCol = min(selectedCol, keyboardRows[selectedRow].length - 1);
-  } else if (k == 's' || k == 'S') {
+  } else if (k == 's' || k == 'S' || "3P".equals(serialMsg)) { // Down
     selectedRow++;
     if (selectedRow >= keyboardRows.length) selectedRow = 0;
     selectedCol = min(selectedCol, keyboardRows[selectedRow].length - 1);
-  } else if (k == ENTER || k == RETURN) {
+  } else if (k == ENTER || k == RETURN || "5P".equals(serialMsg)) { // OK/Enter
     pressSelectedKey();
   } else if (k == BACKSPACE) {
     if (inputFilename.length() > 0)
