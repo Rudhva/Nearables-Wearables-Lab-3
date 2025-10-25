@@ -2,7 +2,6 @@
 float menuW = 400;
 float menuH = 300;
 
-
 float buttonW = 150;
 float buttonH = 40;
 float buttonSpacing = 20;
@@ -15,6 +14,10 @@ float saveY  = btnStartY;
 float loadY  = btnStartY + btnGap;
 float closeY = btnStartY + 2 * btnGap;
 
+boolean typingFilename = false;
+boolean typingForSave = false;
+String inputFilename = "";
+boolean showMenu = false;
 
 void showSaveLoadMenu() {
   rectMode(CORNER);  // Make sure rect(x,y,w,h) is top-left corner
@@ -71,11 +74,16 @@ void showSaveLoadMenu() {
   text("Close", bx + buttonW / 2, closeY + buttonH / 2);
 
   // Input box for filename if typing
-if (typingFilename) {
+  if (typingFilename) {
     float inputX = menuX + 25;
     float inputY = btnStartY + 3 * btnGap + 10;  // a little gap below last button
     float inputW = menuW - 50;
     float inputH = 35;
+
+    fill(0);
+    textSize(16);
+    textAlign(LEFT, BOTTOM);
+    text(typingForSave ? "Enter filename to SAVE:" : "Enter filename to LOAD:", inputX, inputY - 200);
 
     fill(255);
     stroke(150);
@@ -87,8 +95,7 @@ if (typingFilename) {
     textAlign(LEFT, CENTER);
     textSize(16);
     text(inputFilename + "|", inputX + 8, inputY + inputH / 2); // cursor
-}
-
+  }
 }
 
 
@@ -100,9 +107,9 @@ void handleMenuClick() {
 
   // Save
   if (mouseX > bx && mouseX < bx + buttonW && mouseY > saveY && mouseY < saveY + buttonH) {
-    saveObjectsCSV("drawing.csv");
-    showMenu = false;
-    typingFilename = false;
+    inputFilename = "";
+    typingFilename = true;
+    typingForSave = true;
     return;
   }
 
@@ -110,6 +117,7 @@ void handleMenuClick() {
   if (mouseX > bx && mouseX < bx + buttonW && mouseY > loadY && mouseY < loadY + buttonH) {
     inputFilename = "";
     typingFilename = true;
+    typingForSave = false;
     return;
   }
 
@@ -117,9 +125,11 @@ void handleMenuClick() {
   if (mouseX > bx && mouseX < bx + buttonW && mouseY > closeY && mouseY < closeY + buttonH) {
     showMenu = false;
     typingFilename = false;
+    typingForSave = false;
     return;
   }
 }
+
 
 void handleMenuKey(char k) {
   if (!showMenu || !typingFilename) return;
@@ -127,9 +137,14 @@ void handleMenuKey(char k) {
   if (k == BACKSPACE) {
     if (inputFilename.length() > 0) inputFilename = inputFilename.substring(0, inputFilename.length() - 1);
   } else if (k == ENTER || k == RETURN) {
-    loadObjectsFromInput(inputFilename);
+    if (typingForSave) {
+      saveObjectsCSV(inputFilename + ".csv");
+    } else {
+      loadObjectsFromInput(inputFilename);
+    }
     typingFilename = false;
     showMenu = false;
+    typingForSave = false;
   } else if (k != CODED) {
     inputFilename += k;
   }
