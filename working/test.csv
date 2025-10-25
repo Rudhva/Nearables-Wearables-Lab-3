@@ -1,0 +1,13 @@
+x,y,size,angle,fileName,spriteName
+560.0,156.5,1.0,0.0,library/words/Happy.png,Happy1
+730.0,116.5,1.0,0.0,library/words/Halloween.png,Halloween1
+880.0,146.5,0.4499998,0.0,library/item/Primogem.png,Primogem1
+930.0,126.5,0.84999996,0.0,library/item/Primogem.png,Primogem2
+910.0,166.5,0.29999983,0.0,library/item/Primogem.png,Primogem3
+820.0,186.5,0.39999986,0.0,library/item/red_drop.png,red_drop1
+830.0,176.5,0.29999983,0.0,library/item/red_drop.png,red_drop2
+360.0,186.5,1.0,0.0,library/item/skull_2.png,skull_21
+360.0,496.5,0.54999983,0.0,library/item/ghost.png,ghost1
+450.0,526.5,1.1999998,0.0,library/item/ghost.png,ghost2
+830.0,496.5,1.0,0.0,library/my_love/yumi.png,yumi1
+600.0,496.5,1.0,0.0,library/my_love/VENTI.gif,VENTI1
