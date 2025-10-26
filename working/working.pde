@@ -357,6 +357,7 @@ void deleteSelectedTrack() {
 
 
 
+
 // -------------------------
 // Keyboard Input (from Codice 2, preserved)
 // -------------------------
@@ -368,7 +369,7 @@ void keyPressed() {
     showMenu = true; typingFilename = false;
     menuX = (width - menuW) / 2; menuY = (height - menuH) / 2;
   }
-  handleMenuKey(key);
+  handleMenuKey(key, " ");
   if (showMenu) return;
 
   boolean navLeft  = (keyCode == LEFT );
