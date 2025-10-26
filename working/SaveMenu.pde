@@ -1,3 +1,4 @@
+
 // --- Menu layout setup ---
 float menuW = 450;
 float menuH = 320;
@@ -164,21 +165,32 @@ void drawVirtualKeyboard(float startY) {
 }
 
 // ===========================================================
-// MENU KEY HANDLER
+// MENU KEY HANDLER - OVERLOADED VERSIONS
 // ===========================================================
 
+// Version for keyboard input (called from keyPressed)
+void handleMenuKey(char k) {
+  handleMenuKey(k, "");
+}
+
+// Version for serial input (called from processSerialMessage)
 void handleMenuKey(String serialMsg) {
+  handleMenuKey((char)0, serialMsg);
+}
+
+// Main handler that processes both keyboard and serial
+void handleMenuKey(char k, String serialMsg) {
   if (!showMenu) return;
 
   // --- MENU BUTTON SELECTION MODE ---
   if (!typingFilename) {
-    if ("1P".equals(serialMsg)) { // Up
+    if (k == 'w' || k == 'W' || "1P".equals(serialMsg)) { // Up
       selectedMenuButton--;
       if (selectedMenuButton < 0) selectedMenuButton = menuButtons.length - 1;
-    } else if ("3P".equals(serialMsg)) { // Down
+    } else if (k == 's' || k == 'S' || "3P".equals(serialMsg)) { // Down
       selectedMenuButton++;
       if (selectedMenuButton >= menuButtons.length) selectedMenuButton = 0;
-    } else if ("5P".equals(serialMsg)) { // OK/Enter
+    } else if (k == ENTER || k == RETURN || "5P".equals(serialMsg)) { // OK/Enter
       // "Click" selected button
       if (selectedMenuButton == 0) { // Save
         inputFilename = "";
@@ -195,27 +207,37 @@ void handleMenuKey(String serialMsg) {
       } else if (selectedMenuButton == 2) { // Close
         showMenu = false;
       }
+    } else if (k == ESC) {
+      showMenu = false;
     }
     return;
   }
 
   // --- FILENAME TYPING MODE ---
-  if ("4P".equals(serialMsg)) { // Left
+  if (k == 'a' || k == 'A' || "4P".equals(serialMsg)) { // Left
     selectedCol--;
     if (selectedCol < 0) selectedCol = keyboardRows[selectedRow].length - 1;
-  } else if ("2P".equals(serialMsg)) { // Right
+  } else if (k == 'd' || k == 'D' || "2P".equals(serialMsg)) { // Right
     selectedCol++;
     if (selectedCol >= keyboardRows[selectedRow].length) selectedCol = 0;
-  } else if ("1P".equals(serialMsg)) { // Up
+  } else if (k == 'w' || k == 'W' || "1P".equals(serialMsg)) { // Up
     selectedRow--;
     if (selectedRow < 0) selectedRow = keyboardRows.length - 1;
     selectedCol = min(selectedCol, keyboardRows[selectedRow].length - 1);
-  } else if ("3P".equals(serialMsg)) { // Down
+  } else if (k == 's' || k == 'S' || "3P".equals(serialMsg)) { // Down
     selectedRow++;
     if (selectedRow >= keyboardRows.length) selectedRow = 0;
     selectedCol = min(selectedCol, keyboardRows[selectedRow].length - 1);
-  } else if ("5P".equals(serialMsg)) { // OK/Enter
+  } else if (k == ENTER || k == RETURN || "5P".equals(serialMsg)) { // OK/Enter
     pressSelectedKey();
+  } else if (k == BACKSPACE) {
+    if (inputFilename.length() > 0)
+      inputFilename = inputFilename.substring(0, inputFilename.length() - 1);
+  } else if (k == ESC) {
+    // ESC also goes back to menu
+    typingFilename = false;
+    typingForSave = false;
+    inputFilename = "";
   }
 }
 
