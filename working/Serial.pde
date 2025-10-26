@@ -43,6 +43,14 @@ void serialEvent(Serial p) {
 
 void processSerialMessage(String msg) {
   if (msg == null || msg.length() == 0) return;
+  
+  // ===== CHECK IF SAVE/LOAD MENU IS OPEN FIRST =====
+  if (showMenu) {
+    handleMenuKey(msg);
+    return; // Don't process any other input while menu is open
+  }
+  // ==================================================
+  
   boolean okKey = false;
 
   // --- Flex sensor input (F) ---
@@ -304,4 +312,3 @@ void processSerialMessage(String msg) {
     }
   }
 }
-
