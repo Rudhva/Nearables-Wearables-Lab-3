@@ -1,87 +1,113 @@
 // -------------------------
-// Serial Input
+// serial.pde (Processing)
 // -------------------------
-String readSerialMessage() {
-  // Returns the latest full line received from serial
-  return latestSerialMessage;
-}
+import processing.serial.*;
 
-void cleanImages() {
-  String folderPath = sketchPath("data/library");
 
-  String[] cmd = {
-    "/bin/bash",
-    "-c",
-    "magick mogrify -transparent white '" + folderPath + "/*.png'"
-  };
+final int SERIAL_PORT_INDEX = 7; 
 
-  try {
-    println("Running ImageMagick command...");
-    Process process = Runtime.getRuntime().exec(cmd);
-    process.waitFor();
-    println("PNGs processed in-place in 'data/library'.");
-  }
-  catch (Exception e) {
-    // ok to ignore if ImageMagick not installed
-    // e.printStackTrace();
-  }
-}
+Serial myPort;
+String latestSerialMessage = "";
+boolean Fn  = false;
+boolean tap = false;
 
-void serialEvent(Serial p) {
-  String input = p.readStringUntil('\n');
-  if (input != null) {
-    tap = true;
-    input = input.trim();
-    latestSerialMessage = input.replaceAll("^(\\d+)\\s*(\\w).*", "$1$2"); //number + first letter without spaces
-    println("SERIAL: " + latestSerialMessage);
-    processSerialMessage(latestSerialMessage);
-    latestSerialMessage = "";
+// Call this ONCE from setup() in your main .pde:
+//   setupSerial();
+void setupSerial() {
+  println("Serial ports:");
+  String[] ports = Serial.list();
+  for (int i = 0; i < ports.length; i++) println("  ["+i+"] "+ports[i]);
+  if (ports.length == 0) { println("No serial ports found."); return; }
+
+  String chosen;
+  if (SERIAL_PORT_INDEX >= 0 && SERIAL_PORT_INDEX < ports.length) {
+    chosen = ports[SERIAL_PORT_INDEX];               // <<< force by index
   } else {
-    tap = false;
-  }
-}
-
-void processSerialMessage(String msg) {
-  if (msg == null || msg.length() == 0) return;
-  
-  // ===== CHECK IF SAVE/LOAD MENU IS OPEN FIRST =====
-  if (showMenu) {
-    handleMenuKey(msg);
-    return; // Don't process any other input while menu is open
-  }
-  // ==================================================
-  
-  boolean okKey = false;
-
-  // --- Flex sensor input (F) ---
-  if ("F".equals(msg)) {
-    if (Fn) {
-      // Start selecting the left menu items
-      mode = MODE_SELECT_OBJ;
-      selectedObjIndex = 0;
-      println("Entering MODE_SELECT_OBJ via F+Fn");
-    } else {
-      // Select next image to place; if already at last image, go to category selection
-      if (mode == MODE_PICK_IMG) {
-        mode = MODE_PICK_CAT;
-      } else {
-        mode = MODE_PICK_IMG;
-      }
+    // better auto-pick: prefer usbmodem/usbserial/tty.*
+    chosen = ports[ports.length - 1];
+    for (String p : ports) {
+      String pl = p.toLowerCase();
+      if ((pl.contains("usbmodem") || pl.contains("usbserial") || pl.contains("tty."))
+          && !pl.contains("bluetooth")) { chosen = p; break; }
     }
   }
 
-
-  // --- Fn toggle ---
-  if ("6P".equals(msg)) {
-    Fn = true;
-    return;
+  try {
+    myPort = new Serial(this, chosen, 115200);
+    myPort.clear();
+    myPort.bufferUntil('\n');
+    println("Opened serial on " + chosen + " @115200");
+  } catch (Exception e) {
+    println("Failed to open serial: " + e.getMessage());
   }
-  if ("6R".equals(msg)) {
-    Fn = false;
-    return;
+}
+
+
+String readSerialMessage() { return latestSerialMessage; }
+
+void serialEvent(Serial p) {
+  String input = p.readStringUntil('\n');
+  if (input == null) { tap = false; return; }
+
+  tap = true;
+  input = input.trim();
+
+  // Normalize: "10 Pressed"→"10P", "6 Released"→"6R", "F" stays "F"
+  String msg = input;
+  if (msg.matches("^\\d+\\s*[PpRr].*$")) {
+    msg = msg.replaceAll("^(\\d+)\\s*([PpRr]).*$", "$1$2").toUpperCase();
+  } else if (msg.matches("^\\d+.*$")) {
+    msg = msg.replaceAll("^(\\d+).*$", "$1P").toUpperCase();
+  } else {
+    msg = msg.trim().toUpperCase();
   }
 
-  // --- Undo / Redo (9P) ---
+  latestSerialMessage = msg;
+  println("SERIAL: " + latestSerialMessage);
+
+  processSerialMessage(latestSerialMessage);
+  latestSerialMessage = "";
+}
+
+// Highlight pads on the hand UI when serial is used
+void highlightForSerial(String msg) {
+  if ("1P".equals(msg))      markPressed("UP");
+  else if ("2P".equals(msg)) markPressed("RIGHT");
+  else if ("3P".equals(msg)) markPressed("DOWN");
+  else if ("4P".equals(msg)) markPressed("LEFT");
+  else if ("5P".equals(msg)) markPressed("OK");
+  else if ("6P".equals(msg)) markPressed("FN");
+  else if ("7P".equals(msg)) markPressed(Fn ? "I" : "K"); // scale: Fn=bigger (I), no-Fn=smaller (K)
+  else if ("8P".equals(msg)) markPressed(Fn ? "J" : "L"); // rotate: Fn=CCW (J), no-Fn=CW (L)
+}
+
+
+void processSerialMessage(String msg) {
+  if (msg == null || msg.length() == 0) return;
+  highlightForSerial(msg);
+
+  // If SAVE/LOAD MENU is open, route pad arrows/OK to it (works with "1P..5P")
+  if (showMenu) { handleMenuKey(msg); return; }
+
+  boolean okKey = false;
+
+  // Flex
+  // --- Flex sensor F → OPEN MENU ---
+  if ("F".equals(msg)) {
+    showMenu = true;
+    typingFilename = false;
+    menuX = (width - menuW) / 2;
+    menuY = (height - menuH) / 2;
+    println("Menu opened by FLEX");
+    return; // important: prevent falling through to other modes
+  }
+
+
+  // Fn latch
+  if ("6P".equals(msg)) { Fn = true;  return; }
+  if ("6R".equals(msg)) { Fn = false; return; }
+
+  // Undo / Redo
   if ("9P".equals(msg) && !Fn) {
     if (undoStack.size() > 0) {
       ignoreNextPush = true;
@@ -93,7 +119,6 @@ void processSerialMessage(String msg) {
     }
     return;
   }
-
   if ("9P".equals(msg) && Fn) {
     if (redoStack.size() > 0) {
       ignoreNextPush = true;
@@ -106,44 +131,29 @@ void processSerialMessage(String msg) {
     return;
   }
 
-  // --- Open selection mode (10P without Fn) ---
+  // Select mode / open menu (10P)
   if ("10P".equals(msg) && !Fn) {
-    mode = MODE_SELECT_OBJ;
-    selectedObjIndex = 0;
+    mode = MODE_SELECT_OBJ; selectedObjIndex = 0;
     println("Entering MODE_SELECT_OBJ");
     return;
   }
-
-  // --- Open save menu (10P with Fn) ---
   if ("10P".equals(msg) && Fn) {
-    showMenu = true;
-    typingFilename = false;
-    menuX = (width - menuW) / 2;
-    menuY = (height - menuH) / 2;
+    showMenu = true; typingFilename = false;
+    menuX = (width - menuW) / 2; menuY = (height - menuH) / 2;
     println("Opened Save/Load Menu");
     return;
   }
 
-
-  // --- OK button (5P = ENTER) ---
+  // OK (5P)
   if ("5P".equals(msg)) {
     okKey = true;
-
     switch (mode) {
-    case MODE_PICK_BG:
-      if (bgFilenames.size() > 0) {
-        setBackgroundFromPath(bgFilenames.get(currentBgIndex));
-        mode = MODE_PICK_CAT;
-      }
-      return;
-
-    case MODE_PICK_CAT:
-      currentImgIndex = 0;
-      mode = MODE_PICK_IMG;
-      return;
-
-    case MODE_PICK_IMG:
-      {
+      case MODE_PICK_BG:
+        if (bgFilenames.size() > 0) { setBackgroundFromPath(bgFilenames.get(currentBgIndex)); mode = MODE_PICK_CAT; }
+        return;
+      case MODE_PICK_CAT:
+        currentImgIndex = 0; mode = MODE_PICK_IMG; return;
+      case MODE_PICK_IMG: {
         String cat = CATALOGS[currentCatIndex];
         ArrayList<String> list = catFiles.get(cat);
         if (list == null || list.size() == 0) return;
@@ -162,153 +172,72 @@ void processSerialMessage(String msg) {
         mode = MODE_MOVE_OBJ;
         return;
       }
-
-    case MODE_MOVE_OBJ:
-      if (Fn) {
-        deleteSelectedTrack();
-      } else {
-        mode = MODE_PICK_IMG; // Otherwise, just switch back
-      }
-      return;
-
-    case MODE_SELECT_OBJ:
-      mode = MODE_MOVE_OBJ;
-      return;
+      case MODE_MOVE_OBJ:
+        if (Fn) deleteSelectedTrack(); else mode = MODE_PICK_IMG;
+        return;
+      case MODE_SELECT_OBJ:
+        mode = MODE_MOVE_OBJ; return;
     }
-
-
-    return;
   }
 
-  // --- Movement / navigation (arrow equivalents) ---
+  // Pad arrows
   boolean navUp    = "1P".equals(msg);
   boolean navRight = "2P".equals(msg);
   boolean navDown  = "3P".equals(msg);
   boolean navLeft  = "4P".equals(msg);
 
-  // --- Rotation / Scale (7P / 8P) ---
+  // Scale / Rotate
   boolean scaleKey = "7P".equals(msg);
   boolean rotKey   = "8P".equals(msg);
 
-  // --- Handle based on mode ---
   switch (mode) {
-  case MODE_SELECT_OBJ:
-    if (objects.size() == 0) return;
-    if (navUp) {
-      selectedObjIndex = (selectedObjIndex + 1 + objects.size()) % objects.size();
-      return;
-    }
-    if (navDown) {
-      selectedObjIndex = (selectedObjIndex - 1 + objects.size()) % objects.size();
-      return;
-    }
-    if (okKey) {
-      mode = MODE_MOVE_OBJ;
-      return;
-    }
-    break;
+    case MODE_SELECT_OBJ:
+      if (objects.size() == 0) return;
+      if (navUp)   { selectedObjIndex = (selectedObjIndex + 1) % objects.size(); return; }
+      if (navDown) { selectedObjIndex = (selectedObjIndex - 1 + objects.size()) % objects.size(); return; }
+      if (okKey)   { mode = MODE_MOVE_OBJ; return; }
+      break;
 
-  case MODE_PICK_BG:
-    if (bgFilenames.size() == 0) return;
-    if (navLeft) {
-      currentBgIndex = (currentBgIndex - 1 + bgFilenames.size()) % bgFilenames.size();
-      return;
-    }
-    if (navRight) {
-      currentBgIndex = (currentBgIndex + 1) % bgFilenames.size();
-      return;
-    }
-    break;
+    case MODE_PICK_BG:
+      if (bgFilenames.size() == 0) return;
+      if (navLeft)  { currentBgIndex = (currentBgIndex - 1 + bgFilenames.size()) % bgFilenames.size(); return; }
+      if (navRight) { currentBgIndex = (currentBgIndex + 1) % bgFilenames.size(); return; }
+      break;
 
-  case MODE_PICK_CAT:
-    if (navLeft) {
-      currentCatIndex = (currentCatIndex - 1 + CATALOGS.length) % CATALOGS.length;
-      return;
-    }
-    if (navRight) {
-      currentCatIndex = (currentCatIndex + 1) % CATALOGS.length;
-      return;
-    }
-    break;
+    case MODE_PICK_CAT:
+      if (navLeft)  { currentCatIndex = (currentCatIndex - 1 + CATALOGS.length) % CATALOGS.length; return; }
+      if (navRight) { currentCatIndex = (currentCatIndex + 1) % CATALOGS.length; return; }
+      break;
 
-  case MODE_PICK_IMG:
-    {
+    case MODE_PICK_IMG: {
       String cat = CATALOGS[currentCatIndex];
       ArrayList<String> list = catFiles.get(cat);
       if (list == null || list.size() == 0) return;
-      if (navLeft) {
-        currentImgIndex = (currentImgIndex - 1 + list.size()) % list.size();
-        return;
-      }
-      if (navRight) {
-        currentImgIndex = (currentImgIndex + 1) % list.size();
-        return;
-      }
-      if (navUp) {
-        mode = MODE_PICK_CAT;
-        return;
-      }
+      if (navLeft)  { currentImgIndex = (currentImgIndex - 1 + list.size()) % list.size(); return; }
+      if (navRight) { currentImgIndex = (currentImgIndex + 1) % list.size(); return; }
+      if (navUp)    { mode = MODE_PICK_CAT; return; }
       break;
     }
 
-  case MODE_MOVE_OBJ:
-    {
-      if (objects.size() == 0 || selectedObjIndex < 0 || selectedObjIndex >= objects.size()) {
-        mode = MODE_PICK_IMG;
-        return;
-      }
+    case MODE_MOVE_OBJ:
+      if (objects.size() == 0 || selectedObjIndex < 0 || selectedObjIndex >= objects.size()) { mode = MODE_PICK_IMG; return; }
       DrawingObject obj = objects.get(selectedObjIndex);
 
-      if (navLeft) {
-        pushUndo();
-        obj.x -= 10;
-        return;
-      }
-      if (navRight) {
-        pushUndo();
-        obj.x += 10;
-        return;
-      }
-      if (navUp) {
-        pushUndo();
-        obj.y -= 10;
-        return;
-      }
-      if (navDown) {
-        pushUndo();
-        obj.y += 10;
-        return;
-      }
+      if (navLeft)  { pushUndo(); obj.x -= 10; return; }
+      if (navRight) { pushUndo(); obj.x += 10; return; }
+      if (navUp)    { pushUndo(); obj.y -= 10; return; }
+      if (navDown)  { pushUndo(); obj.y += 10; return; }
 
-      if (rotKey && !Fn) {
-        pushUndo();
-        obj.angle += radians(5);
-        return;
-      }
-      if (rotKey && Fn) {
-        pushUndo();
-        obj.angle -= radians(5);
-        return;
-      }
-      if (scaleKey && Fn) {
-        pushUndo();
-        obj.size += 0.05;
-        return;
-      }
-      if (scaleKey && !Fn) {
-        pushUndo();
-        obj.size = max(0.05, obj.size - 0.05);
-        return;
-      }
+      if (rotKey   && !Fn) { pushUndo(); obj.angle += radians(5); return; }
+      if (rotKey   &&  Fn) { pushUndo(); obj.angle -= radians(5); return; }
+      if (scaleKey &&  Fn) { pushUndo(); obj.size  += 0.05;       return; }
+      if (scaleKey && !Fn) { pushUndo(); obj.size  = max(0.05, obj.size - 0.05); return; }
 
       if ("10P".equals(msg) && !Fn) {
-        mode = MODE_SELECT_OBJ;
-        selectedObjIndex = 0;
+        mode = MODE_SELECT_OBJ; selectedObjIndex = 0;
         println("Entering MODE_SELECT_OBJ");
         return;
       }
-
       break;
-    }
   }
 }

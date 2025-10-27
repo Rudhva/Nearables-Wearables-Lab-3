@@ -1,4 +1,3 @@
-
 // --- Menu layout setup ---
 float menuW = 450;
 float menuH = 320;
@@ -148,12 +147,8 @@ void drawVirtualKeyboard(float startY) {
       if (r == selectedRow && c == selectedCol) {
         fill(80, 160, 255);
       } else {
-        // Color code the back button differently
-        if (key.equals("back")) {
-          fill(255, 200, 100);
-        } else {
-          fill(220);
-        }
+        if (key.equals("back")) fill(255, 200, 100);
+        else                    fill(220);
       }
       stroke(100);
       rect(x, y, w, keyH, 6);
@@ -169,75 +164,97 @@ void drawVirtualKeyboard(float startY) {
 // ===========================================================
 
 // Version for keyboard input (called from keyPressed)
-void handleMenuKey(char k) {
-  handleMenuKey(k, "");
-}
+void handleMenuKey(char k) { handleMenuKey(k, ""); }
 
 // Version for serial input (called from processSerialMessage)
-void handleMenuKey(String serialMsg) {
-  handleMenuKey((char)0, serialMsg);
-}
+void handleMenuKey(String serialMsg) { handleMenuKey((char)0, serialMsg); }
 
 // Main handler that processes both keyboard and serial
 void handleMenuKey(char k, String serialMsg) {
   if (!showMenu) return;
 
-  // --- MENU BUTTON SELECTION MODE ---
+  // --- MENU BUTTON SELECTION MODE (Arrow keys only) ---
   if (!typingFilename) {
-    if (k == 'w' || k == 'W' || "1P".equals(serialMsg)) { // Up
+    boolean up    = (k == CODED && keyCode == UP)    || "1P".equals(serialMsg);
+    boolean down  = (k == CODED && keyCode == DOWN)  || "3P".equals(serialMsg);
+    boolean ok    = (k == ENTER || k == RETURN)      || "5P".equals(serialMsg);
+    boolean esc   = (k == ESC);
+
+    if (up) {
       selectedMenuButton--;
       if (selectedMenuButton < 0) selectedMenuButton = menuButtons.length - 1;
-    } else if (k == 's' || k == 'S' || "3P".equals(serialMsg)) { // Down
+      return;
+    }
+    if (down) {
       selectedMenuButton++;
       if (selectedMenuButton >= menuButtons.length) selectedMenuButton = 0;
-    } else if (k == ENTER || k == RETURN || "5P".equals(serialMsg)) { // OK/Enter
-      // "Click" selected button
-      if (selectedMenuButton == 0) { // Save
+      return;
+    }
+    if (ok) {
+      if (selectedMenuButton == 0) {        // Save
         inputFilename = "";
         typingFilename = true;
         typingForSave = true;
-        selectedRow = 0;
-        selectedCol = 0;
+        selectedRow = 0; selectedCol = 0;
       } else if (selectedMenuButton == 1) { // Load
         inputFilename = "";
         typingFilename = true;
         typingForSave = false;
-        selectedRow = 0;
-        selectedCol = 0;
+        selectedRow = 0; selectedCol = 0;
       } else if (selectedMenuButton == 2) { // Close
         showMenu = false;
       }
-    } else if (k == ESC) {
-      showMenu = false;
+      return;
     }
+    if (esc) { showMenu = false; return; }
     return;
   }
 
-  // --- FILENAME TYPING MODE ---
-  if (k == 'a' || k == 'A' || "4P".equals(serialMsg)) { // Left
+  // --- FILENAME TYPING MODE (Arrow keys + serial pads) ---
+  boolean left  = (k == CODED && keyCode == LEFT)  || "4P".equals(serialMsg);
+  boolean right = (k == CODED && keyCode == RIGHT) || "2P".equals(serialMsg);
+  boolean up    = (k == CODED && keyCode == UP)    || "1P".equals(serialMsg);
+  boolean down  = (k == CODED && keyCode == DOWN)  || "3P".equals(serialMsg);
+  boolean ok    = (k == ENTER || k == RETURN)      || "5P".equals(serialMsg);
+  boolean back  = (k == ESC);
+
+  if (left) {
     selectedCol--;
     if (selectedCol < 0) selectedCol = keyboardRows[selectedRow].length - 1;
-  } else if (k == 'd' || k == 'D' || "2P".equals(serialMsg)) { // Right
+    return;
+  }
+  if (right) {
     selectedCol++;
     if (selectedCol >= keyboardRows[selectedRow].length) selectedCol = 0;
-  } else if (k == 'w' || k == 'W' || "1P".equals(serialMsg)) { // Up
+    return;
+  }
+  if (up) {
     selectedRow--;
     if (selectedRow < 0) selectedRow = keyboardRows.length - 1;
     selectedCol = min(selectedCol, keyboardRows[selectedRow].length - 1);
-  } else if (k == 's' || k == 'S' || "3P".equals(serialMsg)) { // Down
+    return;
+  }
+  if (down) {
     selectedRow++;
     if (selectedRow >= keyboardRows.length) selectedRow = 0;
     selectedCol = min(selectedCol, keyboardRows[selectedRow].length - 1);
-  } else if (k == ENTER || k == RETURN || "5P".equals(serialMsg)) { // OK/Enter
+    return;
+  }
+  if (ok) {
     pressSelectedKey();
-  } else if (k == BACKSPACE) {
+    return;
+  }
+  if (k == BACKSPACE) {
     if (inputFilename.length() > 0)
       inputFilename = inputFilename.substring(0, inputFilename.length() - 1);
-  } else if (k == ESC) {
+    return;
+  }
+  if (back) {
     // ESC also goes back to menu
     typingFilename = false;
     typingForSave = false;
     inputFilename = "";
+    return;
   }
 }
 
@@ -255,7 +272,8 @@ void pressSelectedKey() {
       inputFilename = inputFilename.substring(0, inputFilename.length() - 1);
   } else if (key.equals("enter")) {
     if (typingForSave) {
-      saveObjectsCSV(inputFilename + ".csv");
+      String fn = inputFilename.endsWith(".csv") ? inputFilename : (inputFilename + ".csv");
+      saveObjectsCSV(fn);
     } else {
       loadObjectsFromInput(inputFilename);
     }
@@ -274,12 +292,12 @@ void pressSelectedKey() {
 }
 
 // ===========================================================
-// MOUSE HANDLER
+// MOUSE HANDLER (optional; left as a no-op for now)
 // ===========================================================
 
 void mousePressed() {
   if (showMenu) {
-    // Optionally handle clicks later if needed
+    // Handle mouse clicks here if you want clickable keys/buttons later.
     return;
   }
 }
