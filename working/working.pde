@@ -10,7 +10,6 @@ int handMaxWidthPx    = 520;  // hard cap for hand UI width
 float handWidthFrac   = 0.42; // ~40% of available width feels good
 int handRectX=0, handRectY=0, handRectW=0, handRectH=0;
 int reservedTopH = 0;
-
 PImage HAND_UI;
 int handBarHeight = 160;        // visible bar height; tweak 140–200 as you like
 
@@ -27,7 +26,7 @@ Spot[] spots = new Spot[] {
   // --- Left cluster: arrows + OK
   new Spot("LEFT", 0.028f, 0.52f, 0.15f, 0.15f),
   new Spot("OK", 0.1f, 0.52f, 0.15f, 0.15f),
-  new Spot("RIGHT", 0.155f, 0.52f, 0.15f, 0.15f),
+  new Spot("RIGHT", 0.17f, 0.52f, 0.15f, 0.15f),
   new Spot("UP", 0.096f, 0.20f, 0.15f, 0.15f),
   new Spot("DOWN", 0.096f, 0.80f, 0.15f, 0.15f),
 
@@ -36,9 +35,9 @@ Spot[] spots = new Spot[] {
 
   // --- Right cluster: I J K L editing
   new Spot("I", 0.385f, 0.20f, 0.15f, 0.15f),
-  new Spot("J", 0.345f, 0.49f, 0.15f, 0.15f),
-  new Spot("L", 0.455f, 0.49f, 0.15f, 0.15f),
-  new Spot("K", 0.385f, 0.80f, 0.15f, 0.15f),
+  new Spot("J", 0.285f, 0.49f, 0.15f, 0.15f),
+  new Spot("L", 0.42f, 0.5f, 0.15f, 0.15f),
+  new Spot("K", 0.37f, 0.80f, 0.15f, 0.15f),
 };
 
 // Active highlights (fade automatically)
@@ -719,10 +718,10 @@ void drawLayerBanner() {
   // --- title + usage hint ---
   fill(255);
   textAlign(CENTER, TOP);
-  textSize(14);
+  textSize(16);
   text("HISTORY", panelX + panelW/2, panelY + 6);
 
-  textSize(11);
+  textSize(14);
   textAlign(CENTER, TOP);
   int hintY = panelY + 24;
   text("j select", panelX + panelW/2, hintY);
@@ -903,7 +902,7 @@ void drawBannerText(String s) {
 
   // text
   fill(255);
-  textSize(12);
+  textSize(14);
 
   // Left status
   textAlign(LEFT, CENTER);
